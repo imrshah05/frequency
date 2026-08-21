@@ -1,25 +1,37 @@
--- Removes the legacy contextual-onboarding state from profiles, for good.
+-- Removes the legacy onboarding/tutorial state, for good.
 --
--- The tutorial system these columns backed (components/onboarding/* and
--- lib/onboarding/*) has been deleted in full. Nothing reads or writes any of
--- them any more, so they are dropped rather than left as permanently false
--- columns a future reader would have to work out the meaning of.
+-- Both generations of it. The contextual tutorial (components/onboarding/*
+-- and lib/onboarding/*) and the tutorial_progress rebuild that was meant to
+-- replace it have each been deleted in full; nothing in the app reads or
+-- writes either any more. A new onboarding system will be built separately
+-- and will bring its own schema.
 --
--- WHY THIS LOOKS LIKE A REPEAT OF 20260819040000
+-- THE ONLY STATEMENT HERE THAT PRODUCTION STRICTLY NEEDS is the
+-- `drop table public.tutorial_progress` at the bottom. Everything above it
+-- is an idempotent safety net, and is deliberate -- see below.
 --
--- It is, deliberately. Production is already in the post-20260819040000 state:
--- the eight columns do not exist there. 20260821000000 added them back in the
--- repo but was never applied, so the live database and the migration chain
--- disagree. Rather than rewrite either applied or unapplied history, this is a
--- fresh forward migration written to be correct from *both* states -- every
--- statement is `if exists` / idempotent, so it is a no-op against production
--- and a real drop against a database built from the full chain.
+-- WHY THE COLUMN AND TRIGGER WORK IS REPEATED FROM 20260819040000
 --
--- Dropping a column also drops its column-level grants, so the `grant update`
--- statements in 20260731000000, 20260802000000 and 20260821000000 need no
--- separate revoke. The one grant that has to be rewritten by hand is the
--- signup contract's, because it names onboarding_completed alongside columns
--- that survive.
+-- Because this repo has already been caught disagreeing with its own
+-- database once. 20260821000000 restored these eight columns in the chain
+-- and was never applied; production had been sitting in the
+-- post-20260819040000 state the whole time, with client code reading
+-- columns that were not there. That migration has now been deleted (it was
+-- never applied anywhere, so it was a pending instruction rather than
+-- history), but the lesson stands: the chain is not proof of what the live
+-- schema holds.
+--
+-- So this migration asserts the end state rather than assuming it. Every
+-- statement is `if exists` / `create or replace`, which makes the whole
+-- thing a no-op against any database that is already correct -- including
+-- production and including a fresh build from the full chain -- and a real
+-- repair against one that is not.
+--
+-- Dropping a column also drops its column-level grants, so the `grant
+-- update` statements in 20260731000000 and 20260802000000 need no separate
+-- revoke. The one grant that has to be rewritten by hand is the signup
+-- contract's, because it names onboarding_completed alongside columns that
+-- survive.
 
 -- The signup trigger seeded onboarding_completed on every new profile. Replaced
 -- first, so the function never references a column that is about to disappear.
@@ -86,3 +98,12 @@ alter table public.profiles
 grant update (username, bio, avatar_url)
   on table public.profiles
   to authenticated;
+
+-- The tutorial_progress rebuild from 20260819050000. This is the statement
+-- production actually needs: that migration IS applied there, so the table
+-- is live, holds a seeded 'welcome' row per profile, and is now referenced
+-- by nothing.
+--
+-- Its four RLS policies and its composite primary key are owned by the
+-- table and go with it, so no separate drops are needed.
+drop table if exists public.tutorial_progress;
