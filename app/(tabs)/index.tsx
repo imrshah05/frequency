@@ -36,8 +36,6 @@ import EchoActionToast from '@/components/EchoActionToast';
 import SuggestionFeedCard from '@/components/SuggestionFeedCard';
 import SuggestionQuickActionSheet from '@/components/SuggestionQuickActionSheet';
 import SwipeToDeleteRow from '@/components/SwipeToDeleteRow';
-import { OnboardingTarget } from '@/components/onboarding/OnboardingTarget';
-import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import { setBottomDockSuppressed } from '@/lib/bottomDockVisibility';
 import { createNotification, deleteNotification } from '@/lib/notifications';
 import { fetchUsernameForUser } from '@/lib/profiles';
@@ -47,7 +45,6 @@ import { error as hapticError, light, medium } from '@/lib/haptics';
 import { requestTuneIn, respondToTuneInRequest } from '@/lib/tuneIns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hasShownSuggestionFeedCardThisSession, markSuggestionFeedCardShown } from '@/lib/appSession';
-import { ONBOARDING_TARGETS } from '@/lib/onboarding/events';
 import { useSuggestedTuneIns } from '@/hooks/useSuggestedTuneIns';
 import type { SuggestedTuneIn } from '@/lib/suggestedTuneIns';
 
@@ -547,7 +544,6 @@ function HeaderButtonsRow({
 }
 
 export default function FeedScreen() {
-  const onboarding = useOnboarding();
   const [posts, setPosts] = useState<VoicePost[]>([]);
   const [loading, setLoading] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -2111,9 +2107,8 @@ export default function FeedScreen() {
 
   const handleProfilePress = useCallback(() => {
     void light();
-    onboarding.requestProfileOnboarding();
     router.push('/frequency');
-  }, [onboarding]);
+  }, []);
 
   if (loading) {
     return (
@@ -2158,30 +2153,6 @@ export default function FeedScreen() {
             }
           }}
           ListEmptyComponent={
-            onboarding.active &&
-            onboarding.currentStep?.id === 'echo_intro' ? (
-              <OnboardingTarget id={ONBOARDING_TARGETS.feedPrimaryEcho} style={styles.previewEchoPost}>
-                <OnboardingTarget id={ONBOARDING_TARGETS.feedPrimaryEchoCard}>
-                  <View style={styles.previewEchoContent}>
-                    <FrequencyLogo size={54} opacity={0.9} />
-                    <Text style={styles.previewEchoTitle}>A quiet thought</Text>
-                    <View style={styles.playerRow}>
-                      <View style={styles.playButton}>
-                        <Ionicons
-                          name="play"
-                          size={24}
-                          color="#0B100D"
-                          style={styles.playIconNudge}
-                        />
-                      </View>
-                      <View style={styles.waveformWrap}>
-                        <FrequencyWaveform active={false} progress={0} waveform={undefined} gap={3} fill />
-                      </View>
-                    </View>
-                  </View>
-                </OnboardingTarget>
-              </OnboardingTarget>
-            ) : (
             <View style={styles.emptyFeedPost}>
               <View style={styles.headerTop}>
                 <ProfileButton avatarUrl={ownAvatarUrl} username={ownUsername} onPress={handleProfilePress} />
@@ -2202,7 +2173,6 @@ export default function FeedScreen() {
                 </Text>
               </View>
             </View>
-            )
           }
           renderItem={({ item: feedItem, index }) => {
             if (feedItem.kind === 'suggestion') {
@@ -2222,10 +2192,7 @@ export default function FeedScreen() {
             const isLiked = !!likedPostIds[item.id];
 
             return (
-              <OnboardingTarget
-                id={index === 0 ? ONBOARDING_TARGETS.feedPrimaryEcho : `feed_echo_${item.id}`}
-                style={styles.post}
-              >
+              <View style={styles.post}>
                 {index === 0 ? (
                   <View style={styles.header}>
                     <HeaderButtonsRow
@@ -2260,7 +2227,7 @@ export default function FeedScreen() {
                   </View>
                 )}
 
-                <OnboardingTarget id={ONBOARDING_TARGETS.feedPrimaryEchoCard} style={styles.echoBlockTarget}>
+                <View style={styles.echoBlockTarget}>
                   <View style={styles.echoBlock}>
                   <EchoAura active={isPlaying} size={AURA_SIZE} />
 
@@ -2342,8 +2309,8 @@ export default function FeedScreen() {
                     </Touchable>
                   </View>
                   </View>
-                </OnboardingTarget>
-              </OnboardingTarget>
+                </View>
+              </View>
             );
           }}
         />

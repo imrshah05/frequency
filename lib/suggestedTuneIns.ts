@@ -326,9 +326,8 @@ export async function getSuggestedTuneIns(
   // Dismissals: a dismissed candidate is excluded unless a mutual
   // connection or shared group has formed since the dismissal. There's no
   // existing "resurface after state change" pattern elsewhere in the app
-  // (checked lib/notifications.ts and lib/onboarding/persistence.ts -- both
-  // are one-way state, no precedent), so this compares dismissed_at against
-  // the freshest contributing signal directly.
+  // (checked lib/notifications.ts -- one-way state, no precedent), so this
+  // compares dismissed_at against the freshest contributing signal directly.
   const { data: dismissedRows, error: dismissedError } = await supabase
     .from('dismissed_suggestions')
     .select('suggested_user_id, dismissed_at')

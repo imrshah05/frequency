@@ -22,9 +22,6 @@ import GroupAvatarDisplay from '@/components/GroupAvatarDisplay';
 import SpringIn from '@/components/SpringIn';
 import UnreadWhisperGlow from '@/components/UnreadWhisperGlow';
 import WhisperWaveGlyph from '@/components/WhisperWaveGlyph';
-import { OnboardingTarget } from '@/components/onboarding/OnboardingTarget';
-import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
-import { ONBOARDING_TARGETS } from '@/lib/onboarding/events';
 import { FrequencyLogo, FrequencyLogoLoader } from '@/components/branding/FrequencyLogo';
 import { router, useFocusEffect } from 'expo-router';
 import {
@@ -208,7 +205,6 @@ function PressableRow({
 }
 
 export default function WhispersScreen() {
-  const onboarding = useOnboarding();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -348,12 +344,6 @@ export default function WhispersScreen() {
     }, [loadInbox])
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      onboarding.screenReady('whispers');
-    }, [onboarding])
-  );
-
   return (
     <View style={styles.screen}>
       <AnimatedFlatList
@@ -364,10 +354,7 @@ export default function WhispersScreen() {
         scrollEventThrottle={16}
         contentContainerStyle={[styles.content, { paddingTop: headerHeight + S.md }]}
         ListEmptyComponent={
-          <OnboardingTarget
-            id={ONBOARDING_TARGETS.whispersPrimaryArea}
-            style={styles.emptyState}
-          >
+          <View style={styles.emptyState}>
             <View style={styles.emptyStack}>
               {loading ? (
                 <>
@@ -384,7 +371,7 @@ export default function WhispersScreen() {
                 </>
               )}
             </View>
-          </OnboardingTarget>
+          </View>
         }
         renderItem={({ item, index }) => {
           const headerLabel = item.kind === '1:1' ? `@${item.username}` : item.displayName;
@@ -481,28 +468,15 @@ export default function WhispersScreen() {
             </PressableRow>
           );
 
-          // The entrance sits *inside* the row container, never around it, for
-          // two reasons: the onboarding spotlight measures the row's own View
-          // with measureInWindow, so that View must stay untransformed and keep
-          // its padded bounds; and holding the row's height static means the
-          // list never reflows while the content glides in.
+          // The entrance sits *inside* the row container, never around it:
+          // holding the row's height static means the list never reflows
+          // while the content glides in.
           const rowBody = (
             <SpringIn delay={Math.min(index, ROW_STAGGER_CAP) * ROW_STAGGER_MS}>
               {threadRow}
               {!isLast && <View style={styles.rowDivider} />}
             </SpringIn>
           );
-
-          if (index === 0) {
-            return (
-              <OnboardingTarget
-                id={ONBOARDING_TARGETS.whispersPrimaryArea}
-                style={styles.threadRow}
-              >
-                {rowBody}
-              </OnboardingTarget>
-            );
-          }
 
           return <View style={styles.threadRow}>{rowBody}</View>;
         }}

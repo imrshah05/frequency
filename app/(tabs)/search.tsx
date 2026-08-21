@@ -11,7 +11,6 @@ import Touchable from '@/components/Touchable';
 import Avatar from '../../components/Avatar';
 import SpringIn from '@/components/SpringIn';
 import { FrequencyLogo, FrequencyLogoLoader } from '@/components/branding/FrequencyLogo';
-import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import SearchBar from '@/components/SearchBar';
 import SuggestionBubble from '@/components/SuggestionBubble';
 import { useSuggestedTuneIns } from '@/hooks/useSuggestedTuneIns';
@@ -54,7 +53,7 @@ function cleanUsername(username: string | null | undefined) {
  * blank: a short Suggested Tune-Ins preview in the same visual language as
  * the Feed and profiles -- rounded bubbles with mutual/shared badges, no
  * new discovery surface or new query. The suggestions come from the same
- * useSuggestedTuneIns hook the Feed, profiles and onboarding already use.
+ * useSuggestedTuneIns hook the Feed and profiles already use.
  *
  * The suggestions themselves are owned by the screen, not by this component:
  * this unmounts as soon as the user types, and owning the hook here would
@@ -93,18 +92,11 @@ export default function SearchScreen() {
   const [currentUserId, setCurrentUserId] = useState('');
   const [frequencies, setFrequencies] = useState<FrequencyResult[]>([]);
   const [loading, setLoading] = useState(true);
-  const onboarding = useOnboarding();
   const { suggestions } = useSuggestedTuneIns(currentUserId, SUGGESTION_POOL);
 
   const suggestionPreview = useMemo(
     () => suggestions.slice(0, SUGGESTION_PREVIEW),
     [suggestions]
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      onboarding.screenReady('search');
-    }, [onboarding])
   );
 
   useFocusEffect(

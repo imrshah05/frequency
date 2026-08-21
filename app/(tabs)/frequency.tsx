@@ -35,14 +35,6 @@ import { resolveDisplayUsername } from '@/lib/profiles';
 import { getFallbackWaveform } from '@/lib/waveform';
 import { error as hapticError, success } from '@/lib/haptics';
 import { setFeedSuggestionsEnabled } from '@/lib/preferences';
-import { OnboardingTarget } from '@/components/onboarding/OnboardingTarget';
-import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
-import { ONBOARDING_TARGETS } from '@/lib/onboarding/events';
-import {
-  markOnboardingEligibleForNewAccount,
-  resetOnboardingForDevelopment,
-} from '@/lib/onboarding/persistence';
-import { FIRST_RUN_ONBOARDING_STEPS } from '@/lib/onboarding/steps';
 import { deleteAccount } from '@/lib/account';
 import {
   isEchoLive,
@@ -139,7 +131,6 @@ function LiveEchoWaveform({
 
 export default function FrequencyScreen() {
   const insets = useSafeAreaInsets();
-  const onboarding = useOnboarding();
   const [profile, setProfile] = useState<Profile>({
     id: '',
     username: '@frequency',
@@ -147,7 +138,6 @@ export default function FrequencyScreen() {
     bio: '',
     avatarUrl: null,
   });
-  const scrollRef = useRef<ScrollView>(null);
   const [bioDraft, setBioDraft] = useState('');
   const [bioSheetOpen, setBioSheetOpen] = useState(false);
   const [savingBio, setSavingBio] = useState(false);
@@ -253,33 +243,10 @@ export default function FrequencyScreen() {
     }, [loadProfile])
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      onboarding.screenReady('profile');
-    }, [onboarding])
-  );
-
   const { tunedInCount, listeningCount } = useTuneIn(profile.id);
   const displayBio = profile.bio.trim() || 'No bio yet.';
   const liveEchoes = echoes.filter((echo) => isEchoLive(echo.created_at, now));
-  const showingImpactOnboardingPreview =
-    onboarding.active && onboarding.currentStep?.id === 'echo_impact';
-  const showingProfileOnboarding =
-    onboarding.active && onboarding.currentStep?.id === 'profile_intro';
 
-  useEffect(() => {
-    if (showingProfileOnboarding) {
-      // Instant, not animated: the spotlight measures this card's position
-      // shortly after this fires, and an animated scroll was racing that
-      // measurement — sometimes it captured the card mid-scroll and locked
-      // onto the wrong spot, dimming the whole screen with nothing
-      // highlighted. An instant jump settles before the measurement runs.
-      scrollRef.current?.scrollTo({ y: 0, animated: false });
-    }
-  }, [showingProfileOnboarding]);
-  useEffect(() => {
-    if (liveEchoes.length > 0) onboarding.startPendingEchoImpactOnboarding();
-  }, [liveEchoes.length, onboarding]);
   async function handleLogOut() {
     await stopEchoPlayback();
     await supabase.auth.signOut();
@@ -298,18 +265,6 @@ export default function FrequencyScreen() {
     } finally {
       setDeletingAccount(false);
     }
-  }
-
-  async function resetOnboarding() {
-    const { data } = await supabase.auth.getUser();
-    const userId = data.user?.id;
-
-    if (!userId) return;
-
-    await resetOnboardingForDevelopment(userId);
-    await markOnboardingEligibleForNewAccount(userId);
-    router.replace('/(tabs)');
-    onboarding.start(FIRST_RUN_ONBOARDING_STEPS, { restart: true });
   }
 
   async function handleToggleFeedSuggestions(nextValue: boolean) {
@@ -752,35 +707,22 @@ export default function FrequencyScreen() {
     );
   }
 
-  function renderProfileLiveEchoTarget() {
+  function renderProfileLiveEchoes() {
     if (liveEchoes.length === 0) {
       return (
-        <OnboardingTarget id={ONBOARDING_TARGETS.profileLiveEcho} style={styles.emptyEchoCard}>
+        <View style={styles.emptyEchoCard}>
           <FrequencyLogo size={54} opacity={0.14} style={styles.emptyLogo} />
           <Text style={styles.emptyText}>No Echoes live right now.</Text>
-        </OnboardingTarget>
+        </View>
       );
     }
 
-    const [firstEcho, ...remainingEchoes] = liveEchoes;
-    const onboardingTargetId = showingImpactOnboardingPreview
-      ? ONBOARDING_TARGETS.profileEchoImpact
-      : ONBOARDING_TARGETS.profileLiveEcho;
-
-    return (
-      <>
-        <OnboardingTarget id={onboardingTargetId}>
-          {renderLiveEchoCard(firstEcho)}
-        </OnboardingTarget>
-        {remainingEchoes.map(renderLiveEchoCard)}
-      </>
-    );
+    return <>{liveEchoes.map(renderLiveEchoCard)}</>;
   }
 
   return (
     <>
       <ScrollView
-        ref={scrollRef}
         style={styles.screen}
         contentContainerStyle={[styles.content, { paddingTop: insets.top + 8 }]}
         showsVerticalScrollIndicator={false}
@@ -795,8 +737,7 @@ export default function FrequencyScreen() {
         <Text style={styles.title}>My Frequency</Text>
         <Text style={styles.subtitle}>Where your voice lives.</Text>
 
-        <OnboardingTarget id={ONBOARDING_TARGETS.profileMainIdentity}>
-          <View style={styles.profileBlock}>
+        <View style={styles.profileBlock}>
           <ProfileAvatarStage
             avatarUrl={profile.avatarUrl}
             initial={profile.initial}
@@ -820,13 +761,11 @@ export default function FrequencyScreen() {
           >
             {profile.username}
           </Text>
-          </View>
-        </OnboardingTarget>
+        </View>
 
         <View style={styles.divider} />
 
-        <OnboardingTarget id={ONBOARDING_TARGETS.profileStatsCard}>
-          <View style={styles.statsCard}>
+        <View style={styles.statsCard}>
           <View style={styles.stat}>
             <Text style={styles.statNumber}>{echoCount}</Text>
             <Text style={styles.statLabel}>Echoes</Text>
@@ -853,8 +792,7 @@ export default function FrequencyScreen() {
             <Text style={styles.statNumber}>{tunedInCount}</Text>
             <Text style={styles.statLabel}>Tuned In</Text>
           </Touchable>
-          </View>
-        </OnboardingTarget>
+        </View>
 
         <View style={styles.divider} />
 
@@ -887,7 +825,7 @@ export default function FrequencyScreen() {
 
         <View style={styles.echoSection}>
           <Text style={styles.sectionTitle}>Live Echoes</Text>
-          {renderProfileLiveEchoTarget()}
+          {renderProfileLiveEchoes()}
         </View>
 
         <View style={styles.settingsDivider} />
@@ -929,16 +867,6 @@ export default function FrequencyScreen() {
           >
             <Text style={styles.deleteAccountText}>Delete Account</Text>
           </Touchable>
-
-          {__DEV__ && (
-            <Touchable
-              style={styles.resetOnboardingButton}
-              activeOpacity={0.78}
-              onPress={resetOnboarding}
-            >
-              <Text style={styles.resetOnboardingText}>Reset Onboarding</Text>
-            </Touchable>
-          )}
         </View>
       </ScrollView>
 
@@ -1465,17 +1393,6 @@ const styles = StyleSheet.create({
     marginBottom: S.lg,
   },
 
-  onboardingImpactPreview: {
-    flexDirection: 'row',
-    gap: S.md,
-    padding: 18,
-    borderRadius: R.lg,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    marginBottom: S.md,
-  },
-
   bioInput: {
     minHeight: 118,
     borderRadius: R.lg,
@@ -1526,22 +1443,6 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: C.text,
     fontSize: 16,
-    fontWeight: '700',
-  },
-
-  resetOnboardingButton: {
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: S.sm,
-    borderRadius: R.lg,
-    borderWidth: 1,
-    borderColor: C.divider,
-  },
-
-  resetOnboardingText: {
-    color: C.muted,
-    fontSize: 14,
     fontWeight: '700',
   },
 });

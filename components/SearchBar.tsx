@@ -14,7 +14,7 @@ type SearchBarProps = {
 /**
  * The search field is a frosted material rather than a flat surface fill --
  * same BlurView + translucent "glass" layer idiom the Whisper reply preview
- * and the onboarding cards already use, so it reads as one system.
+ * already uses, so it reads as one system.
  *
  * Three layers, in hierarchy order, because a blur only ever shows what is
  * beneath it:

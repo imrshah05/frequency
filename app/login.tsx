@@ -23,7 +23,6 @@ import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
 import { ensureProfileForUser, validateUsername } from '@/lib/profiles';
 import { error as hapticError, success } from '@/lib/haptics';
-import { markOnboardingEligibleForNewAccount } from '@/lib/onboarding/persistence';
 
 type AuthMode = 'login' | 'signup';
 
@@ -121,7 +120,6 @@ export default function LoginScreen() {
     }
 
     if (isSignUp) {
-      await markOnboardingEligibleForNewAccount(data.user?.id);
       void success();
 
       if (!data.session) {

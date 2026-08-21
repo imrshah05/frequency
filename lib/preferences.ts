@@ -1,8 +1,7 @@
 import { supabase } from './supabase';
 
 /**
- * Follows the same read/write shape as lib/onboarding/persistence.ts --
- * a single boolean column on profiles, no separate preferences table.
+ * A single boolean column on profiles, no separate preferences table.
  */
 export async function fetchFeedSuggestionsEnabled(userId: string): Promise<boolean> {
   const { data, error } = await supabase

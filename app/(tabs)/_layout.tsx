@@ -5,13 +5,10 @@ import { Dimensions, Keyboard, Platform, Pressable, StyleSheet, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
-import { OnboardingTarget } from '@/components/onboarding/OnboardingTarget';
-import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { FrequencyColors } from '@/constants/frequencyTheme';
 import { useBottomDockSuppressed } from '@/lib/bottomDockVisibility';
 import { fetchGroupUnreadCount } from '@/lib/groupWhispers';
-import { ONBOARDING_TARGETS } from '@/lib/onboarding/events';
 import { selection } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
 import { fetchTodaysResonance } from '@/lib/resonance';
@@ -82,7 +79,6 @@ function FrequencyTabBar({
   whisperUnreadCount: number;
 }) {
   const bottomDockSuppressed = useBottomDockSuppressed();
-  const onboarding = useOnboarding();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
 
   useEffect(() => {
@@ -137,13 +133,7 @@ function FrequencyTabBar({
           });
 
           if (!focused && !event.defaultPrevented) {
-            if (name === 'whispers') onboarding.requestWhispersOnboarding();
-            if (name === 'search') onboarding.requestSearchOnboarding();
             navigation.navigate(route.name, route.params);
-          } else if (focused && name === 'whispers') {
-            onboarding.requestWhispersOnboarding();
-          } else if (focused && name === 'search') {
-            onboarding.requestSearchOnboarding();
           }
         }}
         onLongPress={() => {
@@ -160,9 +150,7 @@ function FrequencyTabBar({
           name === 'resonance-field' && styles.outerTabRight,
         ]}
       >
-        {name === 'whispers' ? (
-          <OnboardingTarget id="dock_whispers_button">{icon}</OnboardingTarget>
-        ) : icon}
+        {icon}
       </Pressable>
     );
   };
@@ -185,16 +173,12 @@ function FrequencyTabBar({
           {renderTab('resonance-field')}
         </View>
 
-        <OnboardingTarget
-          id={ONBOARDING_TARGETS.dockRecordButton}
-          style={styles.centerButtonPosition}
-        >
+        <View style={styles.centerButtonPosition}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Record"
             onPress={() => {
               void selection();
-              void onboarding.completeFeedOnboarding();
               router.push('/record');
             }}
             style={styles.centerButtonPressable}
@@ -205,7 +189,7 @@ function FrequencyTabBar({
               </View>
             )}
           </Pressable>
-        </OnboardingTarget>
+        </View>
       </View>
     </View>
   );

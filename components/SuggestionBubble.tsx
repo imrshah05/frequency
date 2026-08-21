@@ -22,7 +22,7 @@ type SuggestionBubbleProps = {
  * tuning into" section on someone else's profile.
  *
  * PeopleSuggestionRow is still the compact bordered list row, but only for
- * the dense scrollable contexts it was built for -- Search and onboarding.
+ * the dense scrollable contexts it was built for.
  * The profile section originally used it too and deliberately moved here, so
  * that the profile and the Feed present suggestions identically instead of
  * with two different takes on the same idea.
