@@ -35,6 +35,7 @@ import { resolveDisplayUsername } from '@/lib/profiles';
 import { getFallbackWaveform } from '@/lib/waveform';
 import { error as hapticError, success } from '@/lib/haptics';
 import { setFeedSuggestionsEnabled } from '@/lib/preferences';
+import { useTutorialProgress } from '@/lib/tutorial/useTutorialProgress';
 import { deleteAccount } from '@/lib/account';
 import {
   isEchoLive,
@@ -244,6 +245,7 @@ export default function FrequencyScreen() {
   );
 
   const { tunedInCount, listeningCount } = useTuneIn(profile.id);
+  const { resetAll: resetTutorials } = useTutorialProgress(profile.id || null);
   const displayBio = profile.bio.trim() || 'No bio yet.';
   const liveEchoes = echoes.filter((echo) => isEchoLive(echo.created_at, now));
 
@@ -265,6 +267,14 @@ export default function FrequencyScreen() {
     } finally {
       setDeletingAccount(false);
     }
+  }
+
+  async function handleShowTutorialsAgain() {
+    await resetTutorials();
+    void success();
+    // showInfoToast rather than setInfoToastMessage: it owns the dismiss
+    // timer, and setting the message directly leaves the toast up for good.
+    showInfoToast('Tutorials will show again.');
   }
 
   async function handleToggleFeedSuggestions(nextValue: boolean) {
@@ -853,6 +863,14 @@ export default function FrequencyScreen() {
           </View>
 
           <Touchable
+            style={styles.showTutorialsButton}
+            activeOpacity={0.78}
+            onPress={handleShowTutorialsAgain}
+          >
+            <Text style={styles.showTutorialsText}>Show tutorials again</Text>
+          </Touchable>
+
+          <Touchable
             style={styles.logOutButton}
             activeOpacity={0.78}
             onPress={handleLogOut}
@@ -1329,6 +1347,19 @@ const styles = StyleSheet.create({
     color: C.muted,
     fontSize: 13,
     marginTop: 4,
+  },
+
+  // Same weight as Log Out rather than a switch: this is a one-off action,
+  // not a setting with an on and an off state.
+  showTutorialsButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+  },
+
+  showTutorialsText: {
+    color: C.text,
+    fontSize: 18,
+    fontWeight: '600',
   },
 
   logOutButton: {
