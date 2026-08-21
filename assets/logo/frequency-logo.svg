@@ -1,0 +1,33 @@
+<svg width="240" height="240" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="freqGradient" x1="10%" y1="0%" x2="95%" y2="100%">
+      <stop offset="0%" stop-color="#8DBB95"/>
+      <stop offset="45%" stop-color="#6F9A78"/>
+      <stop offset="100%" stop-color="#DDEBDD"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Waveform: dot + first 2 bars outside the triangle's left edge, -->
+  <!-- the middle bar (cx=32) centered exactly on the edge/gap, -->
+  <!-- remaining bars + dot inside. -->
+  <g fill="url(#freqGradient)">
+    <circle cx="11" cy="50" r="2.5"/>
+    <rect x="15.5" y="32" width="5" height="36" rx="2.5"/>
+    <rect x="22.5" y="22" width="5" height="56" rx="2.5"/>
+    <rect x="29.5" y="39" width="5" height="22" rx="2.5"/>
+    <rect x="36.5" y="22" width="5" height="56" rx="2.5"/>
+    <rect x="43.5" y="41" width="5" height="18" rx="2.5"/>
+    <circle cx="53" cy="50" r="2.5"/>
+  </g>
+
+  <!-- Rounded play-triangle outline, with a gap in the left edge from -->
+  <!-- y=34 to y=66, centered on the middle bar (which spans y=39-61) -->
+  <path
+    d="M32,66 L32,74 Q32,88 43.58,80.15 L78.08,56.73 Q88,50 78.08,43.27 L43.58,19.85 Q32,12 32,26 L32,34"
+    fill="none"
+    stroke="url(#freqGradient)"
+    stroke-width="5"
+    stroke-linecap="butt"
+    stroke-linejoin="round"
+  />
+</svg>
