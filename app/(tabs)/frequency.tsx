@@ -33,14 +33,16 @@ import { useTuneIn } from '../../hooks/useTuneIn';
 import { useWaveformScrub } from '../../hooks/useWaveformScrub';
 import { resolveDisplayUsername } from '@/lib/profiles';
 import { getFallbackWaveform } from '@/lib/waveform';
-import { error as hapticError, selection, success } from '@/lib/haptics';
+import { error as hapticError, success } from '@/lib/haptics';
 import { setFeedSuggestionsEnabled } from '@/lib/preferences';
-import { useTutorialProgress } from '@/lib/tutorial/useTutorialProgress';
-import { useTutorialMoment } from '@/lib/tutorial/useTutorialMoment';
-import { useIsFocused } from '@react-navigation/native';
-import SpotlightOverlay, { SHEET_HANDOFF_MS } from '@/components/tutorial/SpotlightOverlay';
-import TutorialIntroCard from '@/components/tutorial/TutorialIntroCard';
-import TutorialTarget from '@/components/tutorial/TutorialTarget';
+import { OnboardingTarget } from '@/components/onboarding/OnboardingTarget';
+import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
+import { ONBOARDING_TARGETS } from '@/lib/onboarding/events';
+import {
+  markOnboardingEligibleForNewAccount,
+  resetOnboardingForDevelopment,
+} from '@/lib/onboarding/persistence';
+import { FIRST_RUN_ONBOARDING_STEPS } from '@/lib/onboarding/steps';
 import { deleteAccount } from '@/lib/account';
 import {
   isEchoLive,
@@ -61,18 +63,6 @@ import ConfirmSheet from '@/components/ConfirmSheet';
 
 const BIO_MAX_LENGTH = 100;
 const appVersion = Constants.expoConfig?.version ?? '1.0.0';
-
-const ARCHIVES_ROW_TARGET = 'profile_archives_row';
-// Leaves the row clear of the status bar once it is scrolled into view.
-const ARCHIVES_SCROLL_HEADROOM = 140;
-
-const PROFILE_ARCHIVES_STEPS = [
-  {
-    targetId: ARCHIVES_ROW_TARGET,
-    title: 'Where Echoes go to rest.',
-    body: 'After 24 hours an Echo leaves your Frequency and is kept here, with the story of how people listened. Only you can open it.',
-  },
-];
 
 type Profile = {
   id: string;
@@ -149,6 +139,7 @@ function LiveEchoWaveform({
 
 export default function FrequencyScreen() {
   const insets = useSafeAreaInsets();
+  const onboarding = useOnboarding();
   const [profile, setProfile] = useState<Profile>({
     id: '',
     username: '@frequency',
@@ -157,9 +148,6 @@ export default function FrequencyScreen() {
     avatarUrl: null,
   });
   const scrollRef = useRef<ScrollView>(null);
-  // Where the Archives row sits in the scroll content, so the tutorial can
-  // bring it into view before spotlighting it.
-  const archivesRowYRef = useRef<number | null>(null);
   const [bioDraft, setBioDraft] = useState('');
   const [bioSheetOpen, setBioSheetOpen] = useState(false);
   const [savingBio, setSavingBio] = useState(false);
@@ -265,34 +253,33 @@ export default function FrequencyScreen() {
     }, [loadProfile])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      onboarding.screenReady('profile');
+    }, [onboarding])
+  );
+
   const { tunedInCount, listeningCount } = useTuneIn(profile.id);
-  const { resetAll: resetTutorials, hasCompleted: hasCompletedTutorial } = useTutorialProgress();
-
-  // Follows the Feed's avatar spotlight: arriving here is what that
-  // spotlight asked for, so this picks up where it left off.
-  const isProfileFocused = useIsFocused();
-  const { active: tutorialActive, finish: finishTutorial } = useTutorialMoment('profile', {
-    enabled: isProfileFocused && hasCompletedTutorial('profile_discovery'),
-  });
-  const [tutorialIntroDone, setTutorialIntroDone] = useState(false);
-
-  function dismissTutorialIntro() {
-    // Instant, never animated. The Archives row sits below the fold, and an
-    // animated scroll would still be moving when the spotlight measures it
-    // -- the exact race that used to leave the old system dimming the whole
-    // screen with nothing lit. An instant jump has settled by then, and the
-    // spotlight re-measures on open regardless.
-    if (archivesRowYRef.current !== null) {
-      scrollRef.current?.scrollTo({
-        y: Math.max(0, archivesRowYRef.current - ARCHIVES_SCROLL_HEADROOM),
-        animated: false,
-      });
-    }
-
-    setTimeout(() => setTutorialIntroDone(true), SHEET_HANDOFF_MS);
-  }
   const displayBio = profile.bio.trim() || 'No bio yet.';
   const liveEchoes = echoes.filter((echo) => isEchoLive(echo.created_at, now));
+  const showingImpactOnboardingPreview =
+    onboarding.active && onboarding.currentStep?.id === 'echo_impact';
+  const showingProfileOnboarding =
+    onboarding.active && onboarding.currentStep?.id === 'profile_intro';
+
+  useEffect(() => {
+    if (showingProfileOnboarding) {
+      // Instant, not animated: the spotlight measures this card's position
+      // shortly after this fires, and an animated scroll was racing that
+      // measurement — sometimes it captured the card mid-scroll and locked
+      // onto the wrong spot, dimming the whole screen with nothing
+      // highlighted. An instant jump settles before the measurement runs.
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
+  }, [showingProfileOnboarding]);
+  useEffect(() => {
+    if (liveEchoes.length > 0) onboarding.startPendingEchoImpactOnboarding();
+  }, [liveEchoes.length, onboarding]);
   async function handleLogOut() {
     await stopEchoPlayback();
     await supabase.auth.signOut();
@@ -313,21 +300,16 @@ export default function FrequencyScreen() {
     }
   }
 
-  // Clears every tutorial_progress row, so the contextual moments run
-  // again from the beginning -- including the welcome screen, which is why
-  // this reads as "show them again" rather than "reset onboarding".
-  // Available to everyone, not just dev builds: the tutorials are part of
-  // the product, and wanting to see one a second time is a normal thing to
-  // want.
-  async function handleShowTutorialsAgain() {
-    try {
-      await resetTutorials();
-      void selection();
-      showInfoToast('Tutorials will show again.');
-    } catch (error: any) {
-      void hapticError();
-      Alert.alert('Settings Error', error.message);
-    }
+  async function resetOnboarding() {
+    const { data } = await supabase.auth.getUser();
+    const userId = data.user?.id;
+
+    if (!userId) return;
+
+    await resetOnboardingForDevelopment(userId);
+    await markOnboardingEligibleForNewAccount(userId);
+    router.replace('/(tabs)');
+    onboarding.start(FIRST_RUN_ONBOARDING_STEPS, { restart: true });
   }
 
   async function handleToggleFeedSuggestions(nextValue: boolean) {
@@ -770,17 +752,29 @@ export default function FrequencyScreen() {
     );
   }
 
-  function renderLiveEchoes() {
+  function renderProfileLiveEchoTarget() {
     if (liveEchoes.length === 0) {
       return (
-        <View style={styles.emptyEchoCard}>
+        <OnboardingTarget id={ONBOARDING_TARGETS.profileLiveEcho} style={styles.emptyEchoCard}>
           <FrequencyLogo size={54} opacity={0.14} style={styles.emptyLogo} />
           <Text style={styles.emptyText}>No Echoes live right now.</Text>
-        </View>
+        </OnboardingTarget>
       );
     }
 
-    return <>{liveEchoes.map(renderLiveEchoCard)}</>;
+    const [firstEcho, ...remainingEchoes] = liveEchoes;
+    const onboardingTargetId = showingImpactOnboardingPreview
+      ? ONBOARDING_TARGETS.profileEchoImpact
+      : ONBOARDING_TARGETS.profileLiveEcho;
+
+    return (
+      <>
+        <OnboardingTarget id={onboardingTargetId}>
+          {renderLiveEchoCard(firstEcho)}
+        </OnboardingTarget>
+        {remainingEchoes.map(renderLiveEchoCard)}
+      </>
+    );
   }
 
   return (
@@ -801,7 +795,8 @@ export default function FrequencyScreen() {
         <Text style={styles.title}>My Frequency</Text>
         <Text style={styles.subtitle}>Where your voice lives.</Text>
 
-        <View style={styles.profileBlock}>
+        <OnboardingTarget id={ONBOARDING_TARGETS.profileMainIdentity}>
+          <View style={styles.profileBlock}>
           <ProfileAvatarStage
             avatarUrl={profile.avatarUrl}
             initial={profile.initial}
@@ -825,11 +820,13 @@ export default function FrequencyScreen() {
           >
             {profile.username}
           </Text>
-        </View>
+          </View>
+        </OnboardingTarget>
 
         <View style={styles.divider} />
 
-        <View style={styles.statsCard}>
+        <OnboardingTarget id={ONBOARDING_TARGETS.profileStatsCard}>
+          <View style={styles.statsCard}>
           <View style={styles.stat}>
             <Text style={styles.statNumber}>{echoCount}</Text>
             <Text style={styles.statLabel}>Echoes</Text>
@@ -856,7 +853,8 @@ export default function FrequencyScreen() {
             <Text style={styles.statNumber}>{tunedInCount}</Text>
             <Text style={styles.statLabel}>Tuned In</Text>
           </Touchable>
-        </View>
+          </View>
+        </OnboardingTarget>
 
         <View style={styles.divider} />
 
@@ -873,30 +871,23 @@ export default function FrequencyScreen() {
 
         <View style={styles.divider} />
 
-        <TutorialTarget
-          id={ARCHIVES_ROW_TARGET}
-          onLayout={(event) => {
-            archivesRowYRef.current = event.nativeEvent.layout.y;
-          }}
+        <Touchable
+          style={styles.archiveButton}
+          activeOpacity={0.84}
+          onPress={() => router.push('/archives')}
         >
-          <Touchable
-            style={styles.archiveButton}
-            activeOpacity={0.84}
-            onPress={() => router.push('/archives')}
-          >
-            <View>
-              <Text style={styles.archiveButtonText}>Archives</Text>
-              <Text style={styles.archiveButtonSubtext}>Private history and final Echo Impact</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={22} color={C.accentSoft} />
-          </Touchable>
-        </TutorialTarget>
+          <View>
+            <Text style={styles.archiveButtonText}>Archives</Text>
+            <Text style={styles.archiveButtonSubtext}>Private history and final Echo Impact</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color={C.accentSoft} />
+        </Touchable>
 
         <View style={styles.divider} />
 
         <View style={styles.echoSection}>
           <Text style={styles.sectionTitle}>Live Echoes</Text>
-          {renderLiveEchoes()}
+          {renderProfileLiveEchoTarget()}
         </View>
 
         <View style={styles.settingsDivider} />
@@ -924,20 +915,6 @@ export default function FrequencyScreen() {
           </View>
 
           <Touchable
-            style={styles.settingsActionRow}
-            activeOpacity={0.78}
-            onPress={handleShowTutorialsAgain}
-          >
-            <View style={styles.settingsToggleText}>
-              <Text style={styles.settingsToggleLabel}>Show tutorials again</Text>
-              <Text style={styles.settingsToggleSubtext}>
-                Starts over from the welcome screen.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={C.faint} />
-          </Touchable>
-
-          <Touchable
             style={styles.logOutButton}
             activeOpacity={0.78}
             onPress={handleLogOut}
@@ -952,21 +929,18 @@ export default function FrequencyScreen() {
           >
             <Text style={styles.deleteAccountText}>Delete Account</Text>
           </Touchable>
+
+          {__DEV__ && (
+            <Touchable
+              style={styles.resetOnboardingButton}
+              activeOpacity={0.78}
+              onPress={resetOnboarding}
+            >
+              <Text style={styles.resetOnboardingText}>Reset Onboarding</Text>
+            </Touchable>
+          )}
         </View>
       </ScrollView>
-
-      <TutorialIntroCard
-        visible={tutorialActive && !tutorialIntroDone}
-        title="This is your Frequency."
-        body="Echoes is everything you’ve recorded. Listening To is who you hear; Tuned In is who hears you."
-        onDismiss={dismissTutorialIntro}
-      />
-
-      <SpotlightOverlay
-        visible={tutorialActive && tutorialIntroDone}
-        steps={PROFILE_ARCHIVES_STEPS}
-        onFinish={finishTutorial}
-      />
 
       <EchoActionToast visible={!!infoToastMessage} message={infoToastMessage ?? ''} />
 
@@ -1406,13 +1380,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  settingsActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: S.md,
-    paddingVertical: S.md,
-  },
-
   settingsToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1498,6 +1465,17 @@ const styles = StyleSheet.create({
     marginBottom: S.lg,
   },
 
+  onboardingImpactPreview: {
+    flexDirection: 'row',
+    gap: S.md,
+    padding: 18,
+    borderRadius: R.lg,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    marginBottom: S.md,
+  },
+
   bioInput: {
     minHeight: 118,
     borderRadius: R.lg,
@@ -1548,6 +1526,22 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: C.text,
     fontSize: 16,
+    fontWeight: '700',
+  },
+
+  resetOnboardingButton: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: S.sm,
+    borderRadius: R.lg,
+    borderWidth: 1,
+    borderColor: C.divider,
+  },
+
+  resetOnboardingText: {
+    color: C.muted,
+    fontSize: 14,
     fontWeight: '700',
   },
 });

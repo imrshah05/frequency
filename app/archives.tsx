@@ -27,9 +27,6 @@ import {
 } from '@/lib/echoMetrics';
 import { loadLiveEchoMetrics } from '@/lib/loadEchoMetrics';
 import GlassSheet from '@/components/GlassSheet';
-import { useIsFocused } from '@react-navigation/native';
-import TutorialIntroCard from '@/components/tutorial/TutorialIntroCard';
-import { useTutorialMoment } from '@/lib/tutorial/useTutorialMoment';
 import EchoImpactStory, { EchoImpactHeading } from '@/components/EchoImpactStory';
 import { liveEchoCutoffIso } from '@/lib/echoLifecycle';
 import { unarchiveEcho } from '@/lib/echoActions';
@@ -120,17 +117,6 @@ export default function ArchivesScreen() {
   const seekingRef = useRef(false);
   const pendingSeekRef = useRef<{ echo: ArchiveEcho; fraction: number } | null>(null);
   const durationMillisRef = useRef<number | null>(null);
-
-  // Only once there is an Impact to open. Explaining Echo Impact over an
-  // empty Archives would be describing something not on screen -- and the
-  // link it describes is per Echo, inside a scrolling list, so this is a
-  // card rather than a spotlight (same reasoning as the Feed).
-  const hasReadableImpact = !loading && echoes.length > 0;
-  const isArchivesFocused = useIsFocused();
-  const { active: impactTutorialActive, finish: finishImpactTutorial } = useTutorialMoment(
-    'echo_impact',
-    { enabled: isArchivesFocused && hasReadableImpact }
-  );
 
   // An archived Echo's numbers come from the impact frozen by the sweep,
   // never from a live recount -- that is the whole point of sealing, and
@@ -506,12 +492,6 @@ export default function ArchivesScreen() {
         </ScrollView>
       </GlassSheet>
 
-      <TutorialIntroCard
-        visible={impactTutorialActive}
-        title="What happened to it."
-        body="Open an Echo’s final Impact to see how people listened during its 24 hours — who pressed play, who stayed with it, who replied. It arrives on its own when a run ends, and lives here after that."
-        onDismiss={finishImpactTutorial}
-      />
     </View>
   );
 }

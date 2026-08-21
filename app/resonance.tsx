@@ -48,9 +48,6 @@ import FrequencyWaveform from '@/components/FrequencyWaveform';
 import ResonanceAura from '@/components/ResonanceAura';
 import ResonanceOrb from '@/components/ResonanceOrb';
 import SegmentedControl, { type SegmentOption } from '@/components/SegmentedControl';
-import { useIsFocused } from '@react-navigation/native';
-import TutorialIntroCard from '@/components/tutorial/TutorialIntroCard';
-import { useTutorialMoment } from '@/lib/tutorial/useTutorialMoment';
 
 const ORB_SIZE = 128;
 // Matches the non-ripple wrapper ResonanceOrb reserves around the sphere, so
@@ -122,18 +119,6 @@ function base64ToArrayBuffer(base64: string) {
 
 export default function ResonanceScreen() {
   const [step, setStep] = useState<Step>('blend');
-
-  // Only over the emotion grid. This screen is pushed automatically once a
-  // day, and a card arriving on top of the recording or saved steps would
-  // interrupt something already in progress.
-  // Focus matters as much as the step. This screen is itself a modal, and
-  // a sheet left mounted while it is dismissed is how iOS orphans a
-  // transparent window that then swallows every touch on the Feed.
-  const isCheckInFocused = useIsFocused();
-  const { active: checkInTutorialActive, finish: finishCheckInTutorial } = useTutorialMoment(
-    'resonance_checkin',
-    { enabled: isCheckInFocused && step === 'blend' }
-  );
   const [category, setCategory] = useState<ResonanceEmotionCategory>('positive');
   const [blendWeights, setBlendWeights] = useState<BlendWeight[]>([]);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -1041,19 +1026,6 @@ export default function ResonanceScreen() {
         </Pressable>
       </ScrollView>
 
-      {/*
-        One card, and only about privacy. The screen already teaches the
-        interaction itself -- "Tap an emotion to begin", "Tap more than one
-        to blend them" -- so repeating it here would be a tutorial reading
-        the screen aloud.
-      */}
-      <TutorialIntroCard
-        visible={checkInTutorialActive}
-        title="This one stays with you."
-        body="Your Resonance is private. It never becomes an Echo, never goes into a Whisper, and nobody else can see it."
-        onDismiss={finishCheckInTutorial}
-        inline
-      />
     </KeyboardAvoidingView>
   );
 }

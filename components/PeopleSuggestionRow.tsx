@@ -17,9 +17,10 @@ import type { SuggestedTuneIn } from '@/lib/suggestedTuneIns';
 
 export type PeopleSuggestionRowProps = {
   suggestion: SuggestedTuneIn;
-  /** Called once the Tune In request succeeds (status leaves 'none'). */
-  onActioned: (id: string) => void;
-  onDismiss: (id: string) => void;
+  /** Called once the Tune In request succeeds (status leaves 'none'). Optional -- the onboarding jumpstart step doesn't remove rows on action, it just lets the row show its own Tuned-In state. */
+  onActioned?: (id: string) => void;
+  /** Omit entirely to hide the dismiss (X) button -- used by the onboarding jumpstart step, which never writes a dismissal. */
+  onDismiss?: (id: string) => void;
 };
 
 export default function PeopleSuggestionRow({ suggestion, onActioned, onDismiss }: PeopleSuggestionRowProps) {
@@ -32,7 +33,7 @@ export default function PeopleSuggestionRow({ suggestion, onActioned, onDismiss 
   useEffect(() => {
     if (tuneInStatus !== 'none' && !actionedRef.current) {
       actionedRef.current = true;
-      onActioned(suggestion.id);
+      onActioned?.(suggestion.id);
     }
   }, [tuneInStatus, suggestion.id, onActioned]);
 
@@ -72,14 +73,16 @@ export default function PeopleSuggestionRow({ suggestion, onActioned, onDismiss 
         </View>
       </Touchable>
 
-      <Touchable
-        style={styles.dismissButton}
-        activeOpacity={0.7}
-        onPress={() => onDismiss(suggestion.id)}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <Ionicons name="close" size={16} color={C.muted} />
-      </Touchable>
+      {onDismiss && (
+        <Touchable
+          style={styles.dismissButton}
+          activeOpacity={0.7}
+          onPress={() => onDismiss(suggestion.id)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="close" size={16} color={C.muted} />
+        </Touchable>
+      )}
 
       <Touchable
         style={[styles.tuneButton, tuneInStatus === 'pending' && styles.pendingButton]}

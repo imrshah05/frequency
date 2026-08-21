@@ -23,11 +23,6 @@ import { FrequencyLogo, FrequencyLogoLoader } from '@/components/branding/Freque
 import FrequencyWaveform from '@/components/FrequencyWaveform';
 import ResonanceHalo from '@/components/ResonanceHalo';
 import ResonanceOrb from '@/components/ResonanceOrb';
-import { useIsFocused } from '@react-navigation/native';
-import SpotlightOverlay, { SHEET_HANDOFF_MS } from '@/components/tutorial/SpotlightOverlay';
-import TutorialIntroCard from '@/components/tutorial/TutorialIntroCard';
-import TutorialTarget from '@/components/tutorial/TutorialTarget';
-import { useTutorialMoment } from '@/lib/tutorial/useTutorialMoment';
 import {
   FrequencyColors as C,
   FrequencyRadius as R,
@@ -46,16 +41,6 @@ import { computeResonanceCluster } from '@/lib/resonanceLayout';
 import { buildResonanceCalendarMonth, type ResonanceCalendarWeek } from '@/lib/resonanceCalendar';
 import { error as hapticError, selection, success } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
-
-const RECORD_RESONANCE_TARGET = 'resonance_record_today';
-
-const RESONANCE_FIELD_STEPS = [
-  {
-    targetId: RECORD_RESONANCE_TARGET,
-    title: 'One a day.',
-    body: 'Record how today feels, and it joins the field as its own orb.',
-  },
-];
 
 const CONTENT_HORIZONTAL_PADDING = 28;
 const ENTRANCE_DURATION_MS = 900;
@@ -216,30 +201,6 @@ export default function ResonanceFieldScreen() {
     () => entries.some((entry) => entry.entry_date === getLocalDateString()),
     [entries]
   );
-
-  const showRecordPill = !loading && !todayLogged;
-
-  // Waits for the load, so the copy can say whether there is a calendar to
-  // swipe to and the spotlight knows whether its button exists.
-  const isFieldFocused = useIsFocused();
-  const { active: tutorialActive, finish: finishTutorial } = useTutorialMoment('resonance_field', {
-    enabled: isFieldFocused && !loading,
-  });
-  const [tutorialIntroDone, setTutorialIntroDone] = useState(false);
-
-  function dismissTutorialIntro() {
-    // Nothing to spotlight if today is already recorded -- the card was the
-    // whole moment, so it ends here rather than waiting on a button that
-    // will not appear.
-    if (!showRecordPill) {
-      finishTutorial();
-      return;
-    }
-
-    // Let the card finish sliding out before the spotlight's own modal
-    // opens behind it.
-    setTimeout(() => setTutorialIntroDone(true), SHEET_HANDOFF_MS);
-  }
 
   const calendarCellSize = (availableWidth - CALENDAR_GRID_GAP * 6) / 7;
   const calendarOrbSize = calendarCellSize * 0.68;
@@ -642,25 +603,18 @@ export default function ResonanceFieldScreen() {
         </View>
         <Text style={styles.subtitle}>Your private mood history.</Text>
 
-        {/*
-          The tutorial wrapper has to hug the pill, not stretch: it is what
-          gets measured, and a full-width wrapper would cut a full-width
-          strip out of the dim instead of lighting the button.
-        */}
-        {showRecordPill && (
-          <TutorialTarget id={RECORD_RESONANCE_TARGET} style={styles.recordTodayTarget}>
-            <Touchable
-              style={styles.recordTodayPill}
-              activeOpacity={0.84}
-              onPress={() => {
-                void selection();
-                router.push('/resonance');
-              }}
-            >
-              <Ionicons name="mic-outline" size={14} color={C.accent} />
-              <Text style={styles.recordTodayPillText}>Record today&apos;s Resonance</Text>
-            </Touchable>
-          </TutorialTarget>
+        {!loading && !todayLogged && (
+          <Touchable
+            style={styles.recordTodayPill}
+            activeOpacity={0.84}
+            onPress={() => {
+              void selection();
+              router.push('/resonance');
+            }}
+          >
+            <Ionicons name="mic-outline" size={14} color={C.accent} />
+            <Text style={styles.recordTodayPillText}>Record today&apos;s Resonance</Text>
+          </Touchable>
         )}
 
         {entries.length > 0 && (
@@ -1228,22 +1182,6 @@ export default function ResonanceFieldScreen() {
         </View>
       </Modal>
 
-      <TutorialIntroCard
-        visible={tutorialActive && !tutorialIntroDone}
-        title="Your Resonance Field."
-        body={
-          entries.length > 0
-            ? 'Every orb is one day’s mood, kept private to you — never shared, never on your profile. Swipe across for the same days as a calendar.'
-            : 'Each day you record how you feel becomes an orb here, kept private to you — never shared, never on your profile.'
-        }
-        onDismiss={dismissTutorialIntro}
-      />
-
-      <SpotlightOverlay
-        visible={tutorialActive && tutorialIntroDone && showRecordPill}
-        steps={RESONANCE_FIELD_STEPS}
-        onFinish={finishTutorial}
-      />
     </View>
   );
 }
@@ -1291,10 +1229,6 @@ const styles = StyleSheet.create({
     color: C.muted,
     fontSize: 18,
     marginTop: 8,
-  },
-
-  recordTodayTarget: {
-    alignSelf: 'flex-start',
   },
 
   recordTodayPill: {

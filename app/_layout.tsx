@@ -10,7 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { FrequencyLogoLoader } from '@/components/branding/FrequencyLogo';
 import EchoImpactRevealHost from '@/components/EchoImpactRevealHost';
-import TutorialWelcomeHost from '@/components/tutorial/TutorialWelcomeHost';
+import { OnboardingProvider } from '@/components/onboarding/OnboardingProvider';
 import { FrequencyColors as C } from '@/constants/frequencyTheme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ensureProfileForUser } from '@/lib/profiles';
@@ -90,77 +90,70 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="record"
-            options={{
-              headerShown: false,
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen
-            name="resonance"
-            options={{
-              headerShown: false,
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen name="frequency/[userId]" options={{ headerShown: false }} />
-          <Stack.Screen name="archives" options={{ headerShown: false }} />
-          <Stack.Screen name="live-echoes/[userId]" options={{ headerShown: false }} />
-          <Stack.Screen name="frequency-connections" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="mutuals"
-            options={{
-              headerShown: false,
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen name="echoes-near-you" options={{ headerShown: false }} />
-          <Stack.Screen name="whispers/[threadId]" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="whispers/new"
-            options={{
-              headerShown: false,
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen
-            name="whispers/new-group"
-            options={{
-              headerShown: false,
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen name="whispers/group/[threadId]/index" options={{ headerShown: false }} />
-          <Stack.Screen name="whispers/group/[threadId]/members" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="whispers/group/[threadId]/add"
-            options={{
-              headerShown: false,
-              presentation: 'modal',
-            }}
-          />
-        </Stack>
+        <OnboardingProvider session={session}>
+          <Stack>
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="record"
+              options={{
+                headerShown: false,
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen
+              name="resonance"
+              options={{
+                headerShown: false,
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen name="frequency/[userId]" options={{ headerShown: false }} />
+            <Stack.Screen name="archives" options={{ headerShown: false }} />
+            <Stack.Screen name="live-echoes/[userId]" options={{ headerShown: false }} />
+            <Stack.Screen name="frequency-connections" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="mutuals"
+              options={{
+                headerShown: false,
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen name="echoes-near-you" options={{ headerShown: false }} />
+            <Stack.Screen name="whispers/[threadId]" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="whispers/new"
+              options={{
+                headerShown: false,
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen
+              name="whispers/new-group"
+              options={{
+                headerShown: false,
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen name="whispers/group/[threadId]/index" options={{ headerShown: false }} />
+            <Stack.Screen name="whispers/group/[threadId]/members" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="whispers/group/[threadId]/add"
+              options={{
+                headerShown: false,
+                presentation: 'modal',
+              }}
+            />
+          </Stack>
+        </OnboardingProvider>
 
         {/*
-          Sits outside the navigator, because a sealed Impact can become
-          ready while the app is anywhere. It renders nothing until it finds
-          something waiting, so an app open with no pending reveal is
-          untouched by it.
+          Sits outside the navigator and outside onboarding, because a
+          sealed Impact can become ready while the app is anywhere. It
+          renders nothing until it finds something waiting, so an app open
+          with no pending reveal is untouched by it.
         */}
         <EchoImpactRevealHost userId={session?.user.id ?? null} />
-
-        {/*
-          Above the reveal in the tree so a brand-new account is greeted
-          before anything else can take the screen. In practice they cannot
-          collide -- an account new enough to see this has no Echo old
-          enough to have a sealed Impact -- but the order should not depend
-          on that staying true.
-        */}
-        <TutorialWelcomeHost />
 
         <StatusBar style="light" />
       </ThemeProvider>

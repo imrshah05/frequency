@@ -1,5 +1,4 @@
 import { BlurView } from 'expo-blur';
-import { useEffect } from 'react';
 import {
   Modal,
   Platform,
@@ -7,16 +6,8 @@ import {
   StyleSheet,
   View,
   useWindowDimensions,
-  type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -39,78 +30,22 @@ import { FrequencyColors as C, FrequencyRadius as R } from '@/constants/frequenc
  *
  * Presentation stays `animationType="slide"`, matching every other sheet in
  * the app, rather than inventing a new entrance for one screen.
- *
- * `swipeToDismiss` is opt-in and off by default, so a sheet that does not
- * ask for it renders exactly as it always has -- no gesture detector and no
- * transform in its tree.
  */
-
-// Either a long enough drag or a quick flick closes it. Velocity counts so
-// a short, fast swipe reads as intent, the way it does in every other sheet
-// on the platform.
-const DISMISS_DISTANCE = 110;
-const DISMISS_VELOCITY = 900;
-const SETTLE_SPRING = { damping: 22, stiffness: 220, mass: 0.9 };
-
 export default function GlassSheet({
   visible,
   onClose,
   children,
   maxHeight,
   contentStyle,
-  swipeToDismiss = false,
-  inline = false,
 }: {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
   maxHeight?: number;
   contentStyle?: ViewStyle;
-  /** Drag the sheet down past a threshold to close it. Off by default. */
-  swipeToDismiss?: boolean;
-  /**
-   * Render as an absolutely-positioned overlay instead of a Modal.
-   *
-   * For sheets shown *inside* a screen that is itself presented modally.
-   * Nesting a Modal in a modal screen means the inner one is torn down
-   * while the outer is mid-dismissal, and iOS can leave the inner window
-   * in the hierarchy -- transparent, on top, swallowing every touch. The
-   * app then looks frozen on whatever screen comes next.
-   *
-   * The material and layout are identical; only the host differs. An
-   * inline sheet covers its own screen rather than the whole app, which is
-   * all a modal screen needs.
-   */
-  inline?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const dragY = useSharedValue(0);
-
-  // Reopening must start from rest, or a sheet closed by a drag reopens
-  // already pushed off the bottom of the screen.
-  useEffect(() => {
-    if (visible) dragY.value = 0;
-  }, [dragY, visible]);
-
-  // Vertical only, and only downward -- an upward drag on a sheet already
-  // at its resting position should do nothing rather than lift it.
-  const pan = Gesture.Pan()
-    .activeOffsetY(12)
-    .failOffsetY(-12)
-    .onUpdate((event) => {
-      dragY.value = Math.max(0, event.translationY);
-    })
-    .onEnd((event) => {
-      if (event.translationY > DISMISS_DISTANCE || event.velocityY > DISMISS_VELOCITY) {
-        runOnJS(onClose)();
-        return;
-      }
-
-      dragY.value = withSpring(0, SETTLE_SPRING);
-    });
-
-  const dragStyle = useAnimatedStyle(() => ({ transform: [{ translateY: dragY.value }] }));
 
   // A sheet must never be taller than the screen. The root is bottom
   // anchored, so an unbounded sheet grows off the *top* -- taking its
@@ -121,20 +56,18 @@ export default function GlassSheet({
     windowHeight - insets.top - insets.bottom - 24
   );
 
-  const body = (
-    <>
-      <Pressable style={styles.backdrop} onPress={onClose} />
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.root}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
 
-      <SheetShell
-          swipeToDismiss={swipeToDismiss}
-          pan={pan}
+        <View
           style={[
             styles.sheet,
             {
               maxHeight: cappedHeight,
               marginBottom: Math.max(12, insets.bottom + 8),
             },
-            swipeToDismiss ? dragStyle : null,
           ]}
         >
           <View pointerEvents="none" style={styles.bloom}>
@@ -170,50 +103,10 @@ export default function GlassSheet({
                 <Rect x="0" y="0" width="100%" height="100%" fill="url(#sheetSheen)" />
               </Svg>
             </View>
-        </BlurView>
-      </SheetShell>
-    </>
-  );
-
-  if (inline) {
-    if (!visible) return null;
-    // box-none so the area outside the backdrop stays interactive for the
-    // screen underneath; the backdrop itself still catches taps to close.
-    return (
-      <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, styles.root, styles.inlineLayer]}>
-        {body}
+          </BlurView>
+        </View>
       </View>
-    );
-  }
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>{body}</View>
     </Modal>
-  );
-}
-
-/**
- * The sheet body. Only wrapped in a GestureDetector when a caller asked for
- * the drag, so the default path keeps the exact tree it had before.
- */
-function SheetShell({
-  swipeToDismiss,
-  pan,
-  style,
-  children,
-}: {
-  swipeToDismiss: boolean;
-  pan: ReturnType<typeof Gesture.Pan>;
-  style: StyleProp<ViewStyle>;
-  children: React.ReactNode;
-}) {
-  if (!swipeToDismiss) return <View style={style}>{children}</View>;
-
-  return (
-    <GestureDetector gesture={pan}>
-      <Animated.View style={style}>{children}</Animated.View>
-    </GestureDetector>
   );
 }
 
@@ -221,10 +114,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     justifyContent: 'flex-end',
-  },
-
-  inlineLayer: {
-    zIndex: 900,
   },
 
   backdrop: {

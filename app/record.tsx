@@ -29,6 +29,10 @@ import FrequencyWaveform from '@/components/FrequencyWaveform';
 import { fetchUsernameForUser } from '@/lib/profiles';
 import { downsampleWaveform, meteringToAmplitude } from '@/lib/waveform';
 import { error as hapticError, success } from '@/lib/haptics';
+import {
+  claimFirstEchoOnboarding,
+  queueEchoImpactOnboarding,
+} from '@/lib/onboarding/persistence';
 
 const RECORD_START_THRESHOLD_MS = 150;
 const MIN_RECORDING_MS = 1000;
@@ -596,6 +600,12 @@ export default function RecordScreen() {
 
       const user = userData.user;
 
+      const { count: existingEchoCount } = await supabase
+        .from('voice_notes')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .is('deleted_at', null);
+
       const base64Audio = await FileSystem.readAsStringAsync(recordedUri, {
         encoding: 'base64',
       } as any);
@@ -623,7 +633,7 @@ export default function RecordScreen() {
 
       const username = await fetchUsernameForUser(user.id, user.email);
 
-      const { error: dbError } = await supabase
+      const { data: createdEcho, error: dbError } = await supabase
         .from('voice_notes')
         .insert({
           user_id: user.id,
@@ -641,6 +651,11 @@ export default function RecordScreen() {
         Alert.alert('Database Error', dbError.message);
         setUploading(false);
         return;
+      }
+
+      if (existingEchoCount === 0 && createdEcho?.user_id === user.id) {
+        const claimed = await claimFirstEchoOnboarding(user.id);
+        if (claimed) await queueEchoImpactOnboarding(user.id);
       }
 
       setRecordedUri(null);

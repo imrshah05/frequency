@@ -36,11 +36,8 @@ import EchoActionToast from '@/components/EchoActionToast';
 import SuggestionFeedCard from '@/components/SuggestionFeedCard';
 import SuggestionQuickActionSheet from '@/components/SuggestionQuickActionSheet';
 import SwipeToDeleteRow from '@/components/SwipeToDeleteRow';
-import { useIsFocused } from '@react-navigation/native';
-import SpotlightOverlay from '@/components/tutorial/SpotlightOverlay';
-import TutorialTarget from '@/components/tutorial/TutorialTarget';
-import { useTutorialMoment } from '@/lib/tutorial/useTutorialMoment';
-import { useTutorialProgress } from '@/lib/tutorial/useTutorialProgress';
+import { OnboardingTarget } from '@/components/onboarding/OnboardingTarget';
+import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import { setBottomDockSuppressed } from '@/lib/bottomDockVisibility';
 import { createNotification, deleteNotification } from '@/lib/notifications';
 import { fetchUsernameForUser } from '@/lib/profiles';
@@ -50,25 +47,13 @@ import { error as hapticError, light, medium } from '@/lib/haptics';
 import { requestTuneIn, respondToTuneInRequest } from '@/lib/tuneIns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hasShownSuggestionFeedCardThisSession, markSuggestionFeedCardShown } from '@/lib/appSession';
+import { ONBOARDING_TARGETS } from '@/lib/onboarding/events';
 import { useSuggestedTuneIns } from '@/hooks/useSuggestedTuneIns';
 import type { SuggestedTuneIn } from '@/lib/suggestedTuneIns';
 
 const { height, width } = Dimensions.get('window');
 
 const PLAY_BUTTON_SIZE = 62;
-
-// My Frequency has no button in the dock -- this avatar is the only way in.
-// That made it the least discoverable screen in the app, so it gets the one
-// spotlight on the Feed.
-const FEED_PROFILE_AVATAR_TARGET = 'feed_profile_avatar';
-
-const PROFILE_DISCOVERY_STEPS = [
-  {
-    targetId: FEED_PROFILE_AVATAR_TARGET,
-    title: 'Your Frequency lives here.',
-    body: 'Tap your photo for your own Frequency — your Echoes, who you’re Listening To and Tuned In with, and your Archives.',
-  },
-];
 
 // Deliberately wider than the screen: the glow should bleed off both edges
 // so it reads as light in the room, never as a circle drawn on the page.
@@ -495,23 +480,12 @@ function ProfileButton({
   avatarUrl,
   username,
   onPress,
-  tutorialTarget = false,
 }: {
   avatarUrl: string | null;
   username: string;
   onPress: () => void;
-  /**
-   * Registers this avatar as the profile-discovery spotlight target.
-   *
-   * Only ever true for one instance at a time. The feed renders a header
-   * per page, so every page has its own avatar -- registering them all
-   * under one id would mean whichever measured last wins. The first page
-   * and the empty state are mutually exclusive and are the only two the
-   * spotlight can fire over, so those are the two that opt in.
-   */
-  tutorialTarget?: boolean;
 }) {
-  const button = (
+  return (
     <Touchable
       style={styles.profileGlow}
       activeOpacity={0.82}
@@ -530,10 +504,6 @@ function ProfileButton({
       />
     </Touchable>
   );
-
-  if (!tutorialTarget) return button;
-
-  return <TutorialTarget id={FEED_PROFILE_AVATAR_TARGET}>{button}</TutorialTarget>;
 }
 
 function HeaderButtonsRow({
@@ -547,7 +517,6 @@ function HeaderButtonsRow({
   onActivityPress,
   opacity,
   visible,
-  tutorialTarget = false,
 }: {
   avatarUrl: string | null;
   username: string;
@@ -559,19 +528,13 @@ function HeaderButtonsRow({
   onActivityPress: () => void;
   opacity: Animated.Value;
   visible: boolean;
-  tutorialTarget?: boolean;
 }) {
   return (
     <Animated.View
       style={[styles.headerTop, { opacity }]}
       pointerEvents={visible ? 'auto' : 'none'}
     >
-      <ProfileButton
-        avatarUrl={avatarUrl}
-        username={username}
-        onPress={onProfilePress}
-        tutorialTarget={tutorialTarget}
-      />
+      <ProfileButton avatarUrl={avatarUrl} username={username} onPress={onProfilePress} />
       <ActivityButton
         unreadCount={unreadCount}
         hasPendingTuneInRequest={hasPendingTuneInRequest}
@@ -584,6 +547,7 @@ function HeaderButtonsRow({
 }
 
 export default function FeedScreen() {
+  const onboarding = useOnboarding();
   const [posts, setPosts] = useState<VoicePost[]>([]);
   const [loading, setLoading] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -648,37 +612,12 @@ export default function FeedScreen() {
   const [feedScrollEnabled, setFeedScrollEnabled] = useState(true);
   const insets = useSafeAreaInsets();
 
-  const { hasCompleted: hasCompletedTutorial } = useTutorialProgress();
-
   // Paging toward the next Echo fades the profile/activity buttons out;
   // paging back toward a previous one fades them back in. Tracked as a ref
   // (for the scroll handler's direction check) plus a boolean state (so the
   // hidden row can go pointerEvents="none") alongside the driving opacity.
   const [headerButtonsVisible, setHeaderButtonsVisible] = useState(true);
   const headerButtonsVisibleRef = useRef(true);
-
-  // Follows the welcome screen. It should have been gated on the Feed's own
-  // tutorial, but that moment is not built yet -- `welcome` is the nearest
-  // true predecessor, and the ordering is the same either way.
-  //
-  // Three conditions, and the focus one is load-bearing. The Resonance
-  // check-in is pushed automatically over the Feed on launch, so without
-  // it this spotlight's modal would present *underneath* that screen and
-  // only surface when Resonance was dismissed -- which is exactly how it
-  // came to look like the app hung after closing Resonance. A tutorial
-  // must never present while another screen is stacked on top of it.
-  //
-  // It also waits for the header row to be showing: it fades out when
-  // paging toward the next Echo, and lighting up an invisible avatar would
-  // point at nothing. It starts visible, so a first launch already
-  // satisfies it.
-  const isFeedFocused = useIsFocused();
-  const {
-    active: showProfileDiscovery,
-    finish: finishProfileDiscovery,
-  } = useTutorialMoment('profile_discovery', {
-    enabled: isFeedFocused && hasCompletedTutorial('welcome') && headerButtonsVisible,
-  });
   const headerButtonsOpacity = useRef(new Animated.Value(1)).current;
   const lastFeedScrollYRef = useRef(0);
 
@@ -2172,8 +2111,9 @@ export default function FeedScreen() {
 
   const handleProfilePress = useCallback(() => {
     void light();
+    onboarding.requestProfileOnboarding();
     router.push('/frequency');
-  }, []);
+  }, [onboarding]);
 
   if (loading) {
     return (
@@ -2218,14 +2158,33 @@ export default function FeedScreen() {
             }
           }}
           ListEmptyComponent={
+            onboarding.active &&
+            onboarding.currentStep?.id === 'echo_intro' ? (
+              <OnboardingTarget id={ONBOARDING_TARGETS.feedPrimaryEcho} style={styles.previewEchoPost}>
+                <OnboardingTarget id={ONBOARDING_TARGETS.feedPrimaryEchoCard}>
+                  <View style={styles.previewEchoContent}>
+                    <FrequencyLogo size={54} opacity={0.9} />
+                    <Text style={styles.previewEchoTitle}>A quiet thought</Text>
+                    <View style={styles.playerRow}>
+                      <View style={styles.playButton}>
+                        <Ionicons
+                          name="play"
+                          size={24}
+                          color="#0B100D"
+                          style={styles.playIconNudge}
+                        />
+                      </View>
+                      <View style={styles.waveformWrap}>
+                        <FrequencyWaveform active={false} progress={0} waveform={undefined} gap={3} fill />
+                      </View>
+                    </View>
+                  </View>
+                </OnboardingTarget>
+              </OnboardingTarget>
+            ) : (
             <View style={styles.emptyFeedPost}>
               <View style={styles.headerTop}>
-                <ProfileButton
-                  avatarUrl={ownAvatarUrl}
-                  username={ownUsername}
-                  onPress={handleProfilePress}
-                  tutorialTarget
-                />
+                <ProfileButton avatarUrl={ownAvatarUrl} username={ownUsername} onPress={handleProfilePress} />
                 <ActivityButton
                   unreadCount={unreadCount}
                   hasPendingTuneInRequest={hasPendingTuneInRequest}
@@ -2243,6 +2202,7 @@ export default function FeedScreen() {
                 </Text>
               </View>
             </View>
+            )
           }
           renderItem={({ item: feedItem, index }) => {
             if (feedItem.kind === 'suggestion') {
@@ -2262,7 +2222,10 @@ export default function FeedScreen() {
             const isLiked = !!likedPostIds[item.id];
 
             return (
-              <View style={styles.post}>
+              <OnboardingTarget
+                id={index === 0 ? ONBOARDING_TARGETS.feedPrimaryEcho : `feed_echo_${item.id}`}
+                style={styles.post}
+              >
                 {index === 0 ? (
                   <View style={styles.header}>
                     <HeaderButtonsRow
@@ -2276,7 +2239,6 @@ export default function FeedScreen() {
                       onActivityPress={openActivity}
                       opacity={headerButtonsOpacity}
                       visible={headerButtonsVisible}
-                      tutorialTarget
                     />
                     <Text style={styles.title}>Latest Echoes</Text>
                     <Text style={styles.subtitle}>Listen in.</Text>
@@ -2298,7 +2260,8 @@ export default function FeedScreen() {
                   </View>
                 )}
 
-                <View style={styles.echoBlock}>
+                <OnboardingTarget id={ONBOARDING_TARGETS.feedPrimaryEchoCard} style={styles.echoBlockTarget}>
+                  <View style={styles.echoBlock}>
                   <EchoAura active={isPlaying} size={AURA_SIZE} />
 
                   <View style={styles.userRow}>
@@ -2378,8 +2341,9 @@ export default function FeedScreen() {
                       <Ionicons name="paper-plane-outline" size={21} color={C.text} />
                     </Touchable>
                   </View>
-                </View>
-              </View>
+                  </View>
+                </OnboardingTarget>
+              </OnboardingTarget>
             );
           }}
         />
@@ -2825,12 +2789,6 @@ export default function FeedScreen() {
       />
 
       <EchoActionToast visible={!!suggestionToastMessage} message={suggestionToastMessage ?? ''} />
-
-      <SpotlightOverlay
-        visible={showProfileDiscovery}
-        steps={PROFILE_DISCOVERY_STEPS}
-        onFinish={finishProfileDiscovery}
-      />
     </View>
   );
 }
@@ -2894,6 +2852,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingTop: 78,
     paddingBottom: 120,
+  },
+
+  previewEchoPost: {
+    height: 280,
+    backgroundColor: C.card,
+    marginHorizontal: 28,
+    marginTop: 112,
+    borderRadius: 28,
+    overflow: 'hidden',
+  },
+
+  previewEchoContent: {
+    minHeight: 240,
+    padding: 28,
+    justifyContent: 'center',
+  },
+
+  previewEchoTitle: {
+    color: C.text,
+    fontSize: 23,
+    fontWeight: '700',
+    marginTop: 18,
+    marginBottom: 24,
   },
 
   header: {
@@ -2971,6 +2952,10 @@ const styles = StyleSheet.create({
     color: C.muted,
     fontSize: 21,
     marginTop: 14,
+  },
+
+  echoBlockTarget: {
+    flex: 1,
   },
 
   echoBlock: {
