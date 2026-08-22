@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
-import { clearWelcomeSeen } from '@/lib/tutorial/welcome';
 
 /**
  * Which tutorial moments the signed-in person has already been shown.
@@ -9,23 +8,39 @@ import { clearWelcomeSeen } from '@/lib/tutorial/welcome';
  * One round trip per session, not one per moment. Every completed moment_key
  * is loaded once into a Set and answered from memory after that -- a tutorial
  * asks "have I run yet" on nearly every screen mount, and a query each time
- * would put a network call in front of a render that has to be instant to
- * feel like anything but a stutter.
+ * would put a network call in front of a render that has to be instant.
  *
- * The cache lives outside React, keyed by user, so it survives unmounts and
- * remounts within a session. A tutorial that reappears because its screen was
- * navigated away from and back is the whole failure this avoids.
+ * WHY THIS IS A SUBSCRIBABLE STORE AND NOT JUST A CACHE
+ *
+ * Two screens hold this hook at once: the Feed runs the tutorial, and Profile
+ * owns the "Show tutorials again" button. Tabs stay mounted, so when Profile
+ * resets, the Feed's copy of the answer has to change *underneath it* -- there
+ * is no remount to reload on.
+ *
+ * The first version kept the Set in a ref per hook instance and cleared only
+ * the resetting instance's ref, so the Feed went on believing everything was
+ * finished and the reset button did nothing visible. The Set now lives in one
+ * module-level store, and every mounted hook subscribes to it. `version` is
+ * what makes that change reach memoised consumers: it is in hasCompleted's
+ * dependency list, so anything derived from hasCompleted recomputes when
+ * progress moves.
  */
-type MomentCache = {
+type Snapshot = {
   userId: string;
   completed: Set<string>;
 };
 
-let cache: MomentCache | null = null;
-let inFlight: Promise<MomentCache> | null = null;
+let store: Snapshot | null = null;
+let inFlight: Promise<Snapshot> | null = null;
 
-async function loadCompleted(userId: string): Promise<MomentCache> {
-  if (cache?.userId === userId) return cache;
+const listeners = new Set<() => void>();
+
+function notify() {
+  listeners.forEach((listener) => listener());
+}
+
+async function loadCompleted(userId: string): Promise<Snapshot> {
+  if (store?.userId === userId) return store;
 
   // A second caller arriving while the first query is open waits on the same
   // promise rather than firing its own -- two screens mounting together is
@@ -59,23 +74,24 @@ async function loadCompleted(userId: string): Promise<MomentCache> {
 
   const loaded = await inFlight;
   inFlight = null;
-  cache = loaded;
+  store = loaded;
   return loaded;
-}
-
-/** Drops the session cache. Exported for sign-out and for the Settings reset. */
-export function resetTutorialCache() {
-  cache = null;
-  inFlight = null;
 }
 
 export function useTutorialProgress(userId: string | null | undefined) {
   const [ready, setReady] = useState(false);
-  const completedRef = useRef<Set<string>>(new Set());
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    const listener = () => setVersion((current) => current + 1);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
 
   useEffect(() => {
     if (!userId) {
-      completedRef.current = new Set();
       setReady(false);
       return;
     }
@@ -83,9 +99,8 @@ export function useTutorialProgress(userId: string | null | undefined) {
     let active = true;
     setReady(false);
 
-    void loadCompleted(userId).then((loaded) => {
+    void loadCompleted(userId).then(() => {
       if (!active) return;
-      completedRef.current = loaded.completed;
       setReady(true);
     });
 
@@ -96,16 +111,25 @@ export function useTutorialProgress(userId: string | null | undefined) {
 
   /**
    * Synchronous by design. Callers ask this during render to decide whether to
-   * mount a spotlight, and an async answer would mean the moment flashes in a
+   * mount a spotlight, and an async answer would mean the moment flashes a
    * frame late or not at all. `ready` is what says the answer is trustworthy;
-   * until then this reports true, so nothing runs on a half-loaded cache.
+   * until then this reports true, so nothing runs on a half-loaded store.
    */
   const hasCompleted = useCallback(
     (momentKey: string) => {
       if (!ready) return true;
-      return completedRef.current.has('*') || completedRef.current.has(momentKey);
+
+      // Captured once: `store` is module state and could in principle be
+      // replaced between the guard and the read.
+      const snapshot = store;
+      if (!snapshot || snapshot.userId !== userId) return true;
+
+      return snapshot.completed.has('*') || snapshot.completed.has(momentKey);
     },
-    [ready]
+    // version is the invalidation key, not an unused dependency: it is what
+    // makes memoised callers recompute when the store changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ready, userId, version]
   );
 
   const markCompleted = useCallback(
@@ -113,9 +137,12 @@ export function useTutorialProgress(userId: string | null | undefined) {
       if (!userId) return;
 
       // Local first, so a moment can never run twice while the write is in
-      // flight -- the tap that finishes a tutorial often navigates, and the
+      // flight -- the tap that finishes a step often navigates, and the
       // destination may ask this question before the round trip lands.
-      completedRef.current.add(momentKey);
+      if (store?.userId === userId) {
+        store.completed.add(momentKey);
+        notify();
+      }
 
       const { error } = await supabase
         .from('tutorial_progress')
@@ -140,12 +167,14 @@ export function useTutorialProgress(userId: string | null | undefined) {
       return;
     }
 
-    completedRef.current = new Set();
-    resetTutorialCache();
-    // The welcome is device-local rather than a row in this table, so the
-    // reset has to reach it separately or "again" would quietly mean
-    // "everything except the first thing you ever saw".
-    await clearWelcomeSeen();
+    // Emptied in place rather than replaced, so every hook instance reading
+    // this store sees it -- and notified, so they actually re-render.
+    if (store?.userId === userId) {
+      store.completed.clear();
+    } else {
+      store = { userId, completed: new Set() };
+    }
+    notify();
   }, [userId]);
 
   return { ready, hasCompleted, markCompleted, resetAll };

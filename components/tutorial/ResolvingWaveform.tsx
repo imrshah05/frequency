@@ -75,11 +75,18 @@ export default function ResolvingWaveform({
   resolving,
   onResolved,
   style,
+  restOpacity = REST_OPACITY,
 }: {
   /** True to play the resolve once. False renders the resting waveform. */
   resolving: boolean;
   onResolved?: () => void;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Where the bars settle. The auth screen wants background texture on its
+   * #111614 surface; on the welcome screen's true black the same value is
+   * invisible, and there the waveform is the subject rather than the wall.
+   */
+  restOpacity?: number;
 }) {
   const progress = useSharedValue(resolving ? 0 : 1);
   const bloom = useSharedValue(resolving ? 0 : 1);
@@ -115,7 +122,7 @@ export default function ResolvingWaveform({
   }, [resolving, onResolved]);
 
   const containerStyle = useAnimatedStyle(() => ({
-    opacity: REST_OPACITY + bloom.value * (BLOOM_OPACITY - REST_OPACITY),
+    opacity: restOpacity + bloom.value * (BLOOM_OPACITY - restOpacity),
   }));
 
   return (

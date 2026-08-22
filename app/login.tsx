@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -15,8 +15,6 @@ import {
 import Touchable from '@/components/Touchable';
 import { FrequencyBrand, FrequencyLogoLoader } from '@/components/branding/FrequencyLogo';
 import ResolvingWaveform from '@/components/tutorial/ResolvingWaveform';
-import SpringIn from '@/components/SpringIn';
-import { hasSeenWelcome, markWelcomeSeen } from '@/lib/tutorial/welcome';
 import {
   FrequencyColors as C,
   FrequencyRadius as R,
@@ -28,27 +26,6 @@ import { ensureProfileForUser, validateUsername } from '@/lib/profiles';
 import { error as hapticError, success } from '@/lib/haptics';
 
 type AuthMode = 'login' | 'signup';
-
-/**
- * Fades its children in on the welcome launch, and does nothing on every
- * launch after it.
- *
- * The plain-children branch is the point: a returning visitor should find the
- * auth screen already there, not watch it assemble itself every time. Only
- * the first launch is a moment.
- */
-function WelcomeIntro({
-  active,
-  delay,
-  children,
-}: {
-  active: boolean;
-  delay: number;
-  children: React.ReactNode;
-}) {
-  if (!active) return <>{children}</>;
-  return <SpringIn delay={delay}>{children}</SpringIn>;
-}
 
 export default function LoginScreen() {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -62,39 +39,6 @@ export default function LoginScreen() {
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
 
-  /**
-   * The welcome moment: the waveform resolving out of static as the copy
-   * arrives. Three states, not two -- 'checking' matters, because rendering
-   * the resting screen for a frame and then starting the animation would show
-   * the ending before the beginning.
-   *
-   * Device-local rather than a tutorial_progress row: nobody is signed in on
-   * this screen, so there is no auth.uid() to scope one to. See
-   * lib/tutorial/welcome.ts.
-   */
-  const [welcomePhase, setWelcomePhase] = useState<'checking' | 'resolving' | 'rested'>(
-    'checking'
-  );
-
-  useEffect(() => {
-    let active = true;
-
-    void hasSeenWelcome().then((seen) => {
-      if (!active) return;
-      setWelcomePhase(seen ? 'rested' : 'resolving');
-    });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const handleWelcomeResolved = useCallback(() => {
-    setWelcomePhase('rested');
-    void markWelcomeSeen();
-  }, []);
-
-  const welcomeResolving = welcomePhase === 'resolving';
   const isSignUp = mode === 'signup';
 
   function animateButton(toValue: number) {
@@ -163,9 +107,6 @@ export default function LoginScreen() {
 
     if (error) {
       void hapticError();
-      if (isSignUp && __DEV__) {
-        console.warn('[auth] Sign up failed.', error);
-      }
 
       Alert.alert(
         isSignUp ? 'Sign Up Error' : 'Log In Error',
@@ -201,12 +142,7 @@ export default function LoginScreen() {
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {welcomePhase !== 'checking' && (
-        <ResolvingWaveform
-          resolving={welcomePhase === 'resolving'}
-          onResolved={handleWelcomeResolved}
-        />
-      )}
+      <ResolvingWaveform resolving={false} />
 
       <ScrollView
         style={styles.scroll}
@@ -214,26 +150,12 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/*
-          Staggered to land with the waveform, not after it: the copy arrives
-          while the bars are still settling, so the two read as one moment
-          rather than an animation followed by some text. The form comes last
-          and is the cue that the screen is ready to be used.
-        */}
-        <WelcomeIntro active={welcomeResolving} delay={0}>
-          <FrequencyBrand logoSize={40} style={styles.brandRow} textStyle={styles.brand} />
-        </WelcomeIntro>
+        <FrequencyBrand logoSize={40} style={styles.brandRow} textStyle={styles.brand} />
 
-        <WelcomeIntro active={welcomeResolving} delay={420}>
-          <Text style={styles.title}>Find your frequency.</Text>
-        </WelcomeIntro>
+        <Text style={styles.title}>Find your frequency.</Text>
+        <Text style={styles.subtitle}>Some thoughts are better spoken.</Text>
 
-        <WelcomeIntro active={welcomeResolving} delay={760}>
-          <Text style={styles.subtitle}>Some thoughts are better spoken.</Text>
-        </WelcomeIntro>
-
-        <WelcomeIntro active={welcomeResolving} delay={1080}>
-          <View style={styles.form}>
+        <View style={styles.form}>
           {isSignUp && (
             <View
               style={[
@@ -353,9 +275,9 @@ export default function LoginScreen() {
               </Text>
             </Text>
           </Touchable>
-          </View>
-        </WelcomeIntro>
+        </View>
       </ScrollView>
+
     </KeyboardAvoidingView>
   );
 }

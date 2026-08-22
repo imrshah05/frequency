@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { FrequencyLogoLoader } from '@/components/branding/FrequencyLogo';
 import EchoImpactRevealHost from '@/components/EchoImpactRevealHost';
+import WelcomeHost from '@/components/tutorial/WelcomeHost';
 import { FrequencyColors as C } from '@/constants/frequencyTheme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ensureProfileForUser } from '@/lib/profiles';
@@ -151,6 +152,13 @@ export default function RootLayout() {
           is untouched by it.
         */}
         <EchoImpactRevealHost userId={session?.user.id ?? null} />
+
+        {/*
+          Above the reveal host deliberately: on a brand-new account there is
+          nothing to reveal, and if there ever were, being welcomed comes
+          first.
+        */}
+        <WelcomeHost userId={session?.user.id ?? null} />
 
         <StatusBar style="light" />
       </ThemeProvider>
