@@ -41,31 +41,65 @@ function errorResponse(stage: string, detail: unknown, status = 500) {
   return jsonResponse({ error: 'Could not delete account', stage, detail }, status);
 }
 
+// storage.list() returns at most this many entries per call and has no
+// cursor, so a prefix has to be walked page by page. The previous version
+// called it once and inherited the default cap of 100: any account with
+// more than 100 recordings under a prefix kept the remainder forever, with
+// nothing logged to say so.
+const STORAGE_PAGE_SIZE = 100;
+
+type PrefixResult = { bucket: string; prefix: string; removed: number; failed: boolean };
+
 // Best-effort: removes every object under a Storage prefix for this user.
-// Logged and swallowed on failure -- an orphaned file must never block
-// account deletion itself.
+// Failure is reported but never thrown -- an orphaned file must not block
+// account deletion itself. What changed is that "reported" now means the
+// caller finds out, rather than a warning nobody reads.
+//
+// The paths are collected across every page BEFORE anything is removed.
+// Deleting while paging would shift the offsets underneath the walk and
+// silently skip entries.
 async function clearStoragePrefix(
   supabaseService: ReturnType<typeof createClient>,
   bucket: string,
   prefix: string
-) {
-  const { data: entries, error: listError } = await supabaseService.storage
-    .from(bucket)
-    .list(prefix);
+): Promise<PrefixResult> {
+  const names: string[] = [];
 
-  if (listError) {
-    console.warn('[delete-account] storage list failed, skipping', { bucket, prefix, listError });
-    return;
+  for (let offset = 0; ; offset += STORAGE_PAGE_SIZE) {
+    const { data: entries, error: listError } = await supabaseService.storage
+      .from(bucket)
+      .list(prefix, { limit: STORAGE_PAGE_SIZE, offset });
+
+    if (listError) {
+      console.warn('[delete-account] storage list failed', { bucket, prefix, offset, listError });
+      return { bucket, prefix, removed: 0, failed: true };
+    }
+
+    if (!entries || entries.length === 0) break;
+
+    names.push(...entries.map((entry) => entry.name));
+
+    if (entries.length < STORAGE_PAGE_SIZE) break;
   }
 
-  if (!entries || entries.length === 0) return;
+  if (names.length === 0) return { bucket, prefix, removed: 0, failed: false };
 
-  const paths = entries.map((entry) => `${prefix}/${entry.name}`);
-  const { error: removeError } = await supabaseService.storage.from(bucket).remove(paths);
+  let removed = 0;
+  let failed = false;
 
-  if (removeError) {
-    console.warn('[delete-account] storage remove failed, skipping', { bucket, prefix, removeError });
+  for (let i = 0; i < names.length; i += STORAGE_PAGE_SIZE) {
+    const paths = names.slice(i, i + STORAGE_PAGE_SIZE).map((name) => `${prefix}/${name}`);
+    const { error: removeError } = await supabaseService.storage.from(bucket).remove(paths);
+
+    if (removeError) {
+      console.warn('[delete-account] storage remove failed', { bucket, prefix, removeError });
+      failed = true;
+    } else {
+      removed += paths.length;
+    }
   }
+
+  return { bucket, prefix, removed, failed };
 }
 
 Deno.serve(async (req) => {
@@ -100,13 +134,23 @@ Deno.serve(async (req) => {
     const supabaseService = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     stage = 'clear_storage';
-    await Promise.all([
+    const storageResults = await Promise.all([
       clearStoragePrefix(supabaseService, 'voice-notes', userId),
       clearStoragePrefix(supabaseService, 'voice-notes', `whispers/${userId}`),
       clearStoragePrefix(supabaseService, 'voice-notes', `whispers/group/${userId}`),
       clearStoragePrefix(supabaseService, 'avatars', userId),
       clearStoragePrefix(supabaseService, 'resonance-audio', userId),
     ]);
+
+    const storageRemoved = storageResults.reduce((sum, r) => sum + r.removed, 0);
+    const storageFailures = storageResults.filter((r) => r.failed).map((r) => `${r.bucket}/${r.prefix}`);
+
+    if (storageFailures.length > 0) {
+      // Still non-fatal, by the same rule as before. But an account whose
+      // files outlived it is now something the caller can see and act on
+      // rather than something only a log line knew about.
+      console.error('[delete-account] some storage prefixes were not cleared', { storageFailures });
+    }
 
     stage = 'delete_reactions';
     const { error: reactionsError } = await supabaseService
@@ -140,7 +184,11 @@ Deno.serve(async (req) => {
     const { error: deleteUserError } = await supabaseService.auth.admin.deleteUser(userId);
     if (deleteUserError) return errorResponse(stage, deleteUserError, 500);
 
-    return jsonResponse({ deleted: true });
+    return jsonResponse({
+      deleted: true,
+      storageRemoved,
+      storageFailures,
+    });
   } catch (error) {
     console.error('[delete-account] function failed', { stage, error });
     return errorResponse(stage, String(error), 500);
