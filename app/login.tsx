@@ -67,11 +67,16 @@ export default function LoginScreen() {
     setLoading(true);
 
     if (isSignUp) {
-      const { data: existingUsername, error: usernameError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('username', usernameValidation.username)
-        .maybeSingle();
+      // Asked through an RPC rather than by reading profiles. Nobody is signed
+      // in at this point and the profiles read policy is authenticated-only, so
+      // the select this replaces returned zero rows for every candidate --
+      // reporting "available" even for names that were taken. It never errored,
+      // because RLS hides rows rather than refusing the query, which is why it
+      // went unnoticed until two accounts had been created with no username.
+      const { data: isAvailable, error: usernameError } = await supabase.rpc(
+        'is_username_available',
+        { candidate: usernameValidation.username }
+      );
 
       if (usernameError) {
         setLoading(false);
@@ -80,7 +85,11 @@ export default function LoginScreen() {
         return;
       }
 
-      if (existingUsername) {
+      // Only a definite false stops the signup. This check is advisory --
+      // handle_new_user is the authority and now refuses a duplicate outright
+      // rather than blanking it -- so an unexpected answer should not block
+      // someone whose name is genuinely free.
+      if (isAvailable === false) {
         setLoading(false);
         void hapticError();
         Alert.alert('Username taken', 'That username is already taken.');
