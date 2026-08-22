@@ -117,6 +117,25 @@ export default function LoginScreen() {
     if (error) {
       void hapticError();
 
+      // Not gated on __DEV__: failures get reported from device builds, where
+      // __DEV__ is false, and there is no Sentry or crash reporter in this
+      // project -- the console is the only place an auth error can surface.
+      //
+      // Fields are named individually because console.warn of an AuthError
+      // prints message and stack only; `status` and `code` are own properties
+      // and would be dropped. Those two are what separate a trigger refusal
+      // (23505, username already taken) from an ordinary validation failure.
+      //
+      // The raw error is deliberately not serialised wholesale -- it can carry
+      // the submitted credentials, which should not reach a log.
+      console.warn('[auth] Request failed.', {
+        mode: isSignUp ? 'signup' : 'login',
+        name: error.name,
+        message: error.message,
+        status: (error as { status?: number }).status,
+        code: (error as { code?: string }).code,
+      });
+
       Alert.alert(
         isSignUp ? 'Sign Up Error' : 'Log In Error',
         isSignUp

@@ -86,24 +86,55 @@ export async function ensureProfileForUser(
   if (existingProfile?.username) return;
 
   if (existingProfile) {
+    // Same availability check the signup screen makes, for the same reason.
+    // This update writes a username directly and so bypasses handle_new_user
+    // entirely -- the only thing between it and a collision is
+    // profiles_username_unique_idx, whose 23505 used to be swallowed below.
+    // Asking first turns that into a decision rather than a silent no-op.
+    const { data: isAvailable, error: availabilityError } = await supabase.rpc(
+      'is_username_available',
+      { candidate: username }
+    );
+
+    if (availabilityError) {
+      console.warn(
+        '[profiles] Could not check username availability; leaving it unset.',
+        availabilityError.message
+      );
+      return;
+    }
+
+    if (isAvailable === false) {
+      // Leaving it null is the honest outcome: the username genuinely is not
+      // set, and the person can still choose one. Believing it was set while
+      // it silently was not is the failure this replaces.
+      console.warn(
+        `[profiles] Cannot backfill username "${username}" for ${user.id}: already taken. Profile still has none.`
+      );
+      return;
+    }
+
     const { error } = await supabase
       .from('profiles')
       .update({ username })
       .eq('id', user.id);
 
-    if (error && __DEV__) {
+    // Not gated on __DEV__. A device build is exactly where this failing
+    // matters and where __DEV__ is false, and there is no crash reporter in
+    // this project, so the console is the only place it can surface.
+    if (error) {
       console.warn('[profiles] Failed to update profile username.', error.message);
     }
 
     return;
   }
 
-  if (__DEV__) {
-    console.warn(
-      '[profiles] Missing profile row for authenticated user. The database auth trigger should create it.',
-      user.id
-    );
-  }
+  // Ungated for the same reason: this one means the signup trigger did not
+  // create the row, which is a real fault and not a development detail.
+  console.warn(
+    '[profiles] Missing profile row for authenticated user. The database auth trigger should create it.',
+    user.id
+  );
 }
 
 export async function fetchUsernameForUser(userId: string, email?: string | null) {
