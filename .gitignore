@@ -44,3 +44,7 @@ app-example
 
 # Supabase CLI local state
 supabase/.temp/
+
+# Point-in-time live schema snapshots (introspection output, not source of
+# truth -- the migrations are). Regenerate when needed rather than tracking.
+schema-live-*.txt
