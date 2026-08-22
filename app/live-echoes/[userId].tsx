@@ -18,6 +18,7 @@ import { FrequencyLogoLoader } from '@/components/branding/FrequencyLogo';
 import { FrequencyColors as C } from '@/constants/frequencyTheme';
 import { formatRemainingLiveDuration, isEchoLive, liveEchoCutoffIso } from '@/lib/echoLifecycle';
 import { supabase } from '@/lib/supabase';
+import { prefetchAudioUrls, withAudioUrl } from '@/lib/audioUrls';
 
 const { height } = Dimensions.get('window');
 
@@ -26,6 +27,7 @@ type LiveEcho = {
   user_id: string;
   username: string | null;
   audio_url: string;
+  audio_path?: string | null;
   caption: string | null;
   created_at: string;
   waveform?: number[] | null;
@@ -98,9 +100,15 @@ export default function LiveEchoViewerScreen() {
         playingIdRef.current = echo.id;
         setPlaybackProgress(Math.max(0, Math.min(1, seekFraction ?? 0)));
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-        const { sound, status: initialStatus } = await Audio.Sound.createAsync({
-          uri: echo.audio_url,
-        });
+        const created = await withAudioUrl(echo.audio_path, (uri) =>
+          Audio.Sound.createAsync({ uri })
+        );
+        if (!created) {
+          setPlayingId(null);
+          playingIdRef.current = null;
+          return;
+        }
+        const { sound, status: initialStatus } = created;
         soundRef.current = sound;
         durationMillisRef.current =
           initialStatus.isLoaded && initialStatus.durationMillis
@@ -207,7 +215,7 @@ export default function LiveEchoViewerScreen() {
       const [{ data: echoData }, { data: profileData }] = await Promise.all([
         supabase
           .from('voice_notes')
-          .select('id, user_id, username, audio_url, caption, created_at, waveform')
+          .select('id, user_id, username, audio_url, audio_path, caption, created_at, waveform')
           .eq('user_id', userId)
           .is('deleted_at', null)
           .is('archived_at', null)
@@ -236,6 +244,7 @@ export default function LiveEchoViewerScreen() {
         return;
       }
 
+      void prefetchAudioUrls(liveRows.map((echo) => echo.audio_path));
       setEchoes(liveRows);
       setLoading(false);
       void playEcho(liveRows[0]);

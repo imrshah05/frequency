@@ -32,6 +32,7 @@ import { liveEchoCutoffIso } from '@/lib/echoLifecycle';
 import { unarchiveEcho } from '@/lib/echoActions';
 import { error as hapticError, success as hapticSuccess } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
+import { prefetchAudioUrls, withAudioUrl } from '@/lib/audioUrls';
 import { getFallbackWaveform } from '@/lib/waveform';
 import { useWaveformScrub } from '@/hooks/useWaveformScrub';
 
@@ -39,6 +40,7 @@ type ArchiveEcho = {
   id: string;
   user_id: string;
   audio_url?: string;
+  audio_path?: string | null;
   caption: string | null;
   created_at: string;
   duration?: number | null;
@@ -163,6 +165,7 @@ export default function ArchivesScreen() {
     }
 
     const archiveRows = (data ?? []) as ArchiveEcho[];
+    void prefetchAudioUrls(archiveRows.map((echo) => echo.audio_path));
     setEchoes(archiveRows);
 
     // Impacts first: a sealed one supplies the metrics, so there is
@@ -251,9 +254,15 @@ export default function ArchivesScreen() {
       playingEchoIdRef.current = echo.id;
       setPlaybackProgress(Math.max(0, Math.min(1, seekFraction ?? 0)));
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-      const { sound, status: initialStatus } = await Audio.Sound.createAsync({
-        uri: echo.audio_url,
-      });
+      const created = await withAudioUrl(echo.audio_path, (uri) =>
+        Audio.Sound.createAsync({ uri })
+      );
+      if (!created) {
+        setPlayingEchoId(null);
+        playingEchoIdRef.current = null;
+        return;
+      }
+      const { sound, status: initialStatus } = created;
       soundRef.current = sound;
       durationMillisRef.current =
         initialStatus.isLoaded && initialStatus.durationMillis

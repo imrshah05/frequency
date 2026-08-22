@@ -26,6 +26,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import Avatar from '@/components/Avatar';
 import { supabase } from '../../lib/supabase';
+import { prefetchAudioUrls, withAudioUrl } from '@/lib/audioUrls';
 import { FrequencyColors as C } from '../../constants/frequencyTheme';
 import { FrequencyLogo, FrequencyLogoLoader } from '@/components/branding/FrequencyLogo';
 import FrequencyWaveform from '@/components/FrequencyWaveform';
@@ -75,6 +76,7 @@ type VoicePost = {
   user_id: string;
   username: string;
   audio_url: string;
+  audio_path?: string | null;
   caption: string | null;
   created_at: string;
   waveform?: number[] | null;
@@ -1199,6 +1201,10 @@ export default function FeedScreen() {
       return next;
     });
 
+    // One batch signing call for the whole feed, so pressing play is
+    // instant instead of paying a round trip per tap.
+    void prefetchAudioUrls(postRows.map((post) => post.audio_path));
+
     setPosts(
       postRows.map((post) => ({
         ...post,
@@ -1398,9 +1404,20 @@ export default function FeedScreen() {
         playsInSilentModeIOS: true,
       });
 
-      const { sound, status: initialStatus } = await Audio.Sound.createAsync({
-        uri: post.audio_url,
-      });
+      // The bucket is private, so the URL is minted here and re-signed
+      // once if it turns out to be stale. A null result means signing was
+      // refused -- an Echo whose run has ended -- not a playback error.
+      const created = await withAudioUrl(post.audio_path, (uri) =>
+        Audio.Sound.createAsync({ uri })
+      );
+
+      if (!created) {
+        setPlayingId(null);
+        playingIdRef.current = null;
+        return;
+      }
+
+      const { sound, status: initialStatus } = created;
 
       if (loadingIdRef.current !== post.id) {
         // A newer load for a different Echo superseded this one while we

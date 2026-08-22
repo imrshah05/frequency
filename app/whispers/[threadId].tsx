@@ -32,6 +32,7 @@ import {
   FrequencySpacing as S,
 } from '../../constants/frequencyTheme';
 import { supabase } from '../../lib/supabase';
+import { prefetchAudioUrls, withAudioUrl } from '@/lib/audioUrls';
 import { resolveDisplayUsername } from '../../lib/profiles';
 import { getFallbackWaveform, downsampleWaveform, meteringToAmplitude } from '../../lib/waveform';
 import { getOtherWhisperUserId, WhisperThread } from '../../lib/whispers';
@@ -88,6 +89,7 @@ type WhisperMessage = {
   waveform: number[] | null;
   message_type?: 'voice' | 'shared_echo';
   shared_voice_note_id?: string | null;
+  audio_path?: string | null;
   reply_to_message_id?: string | null;
   replyPreview?: WhisperReplyPreview | null;
   created_at: string;
@@ -114,7 +116,7 @@ type SharedEcho = {
   title: string;
   creatorId: string;
   creatorUsername: string;
-  audioUrl: string;
+  audioPath: string | null | undefined;
   waveform?: number[] | null;
   canHear: boolean;
   tuneInStatus: 'none' | 'pending' | 'accepted' | 'declined';
@@ -551,7 +553,7 @@ export default function WhisperThreadScreen() {
   const seekingRef = useRef(false);
   const pendingSeekRef = useRef<{
     playbackId: string;
-    audioUrl: string;
+    audioPath: string | null | undefined;
     voiceNoteId?: string;
     fraction: number;
   } | null>(null);
@@ -718,7 +720,7 @@ export default function WhisperThreadScreen() {
 
     const { data: echoData } = await supabase
       .from('voice_notes')
-      .select('id, user_id, username, audio_url, caption, waveform')
+      .select('id, user_id, username, audio_url, audio_path, caption, waveform')
       .in('id', sharedEchoIds);
 
     const echoRows = (echoData ?? []) as {
@@ -726,6 +728,7 @@ export default function WhisperThreadScreen() {
       user_id: string;
       username: string | null;
       audio_url: string;
+      audio_path?: string | null;
       caption: string | null;
       waveform?: number[] | null;
     }[];
@@ -772,7 +775,7 @@ export default function WhisperThreadScreen() {
         title: echo.caption?.trim() || 'Untitled Echo',
         creatorId: echo.user_id,
         creatorUsername,
-        audioUrl: echo.audio_url,
+        audioPath: echo.audio_path,
         waveform: echo.waveform,
         canHear: viewerId === echo.user_id || tuneInStatus === 'accepted',
         tuneInStatus,
@@ -781,6 +784,7 @@ export default function WhisperThreadScreen() {
       return acc;
     }, {});
 
+    void prefetchAudioUrls(Object.values(nextSharedEchoes).map((echo) => echo.audioPath));
     setSharedEchoesById(nextSharedEchoes);
   }
 
@@ -859,6 +863,7 @@ export default function WhisperThreadScreen() {
         );
       }
     });
+    void prefetchAudioUrls(nextMessages.map((message) => message.audio_path));
     setMessages(nextMessages);
     setLoading(false);
     await loadSharedEchoes(nextMessages, me);
@@ -941,7 +946,7 @@ export default function WhisperThreadScreen() {
 
   async function playAudio(
     playbackId: string,
-    audioUrl: string,
+    audioPath: string | null | undefined,
     voiceNoteId?: string,
     seekFraction?: number
   ) {
@@ -955,7 +960,17 @@ export default function WhisperThreadScreen() {
       playsInSilentModeIOS: true,
     });
 
-    const { sound, status: initialStatus } = await Audio.Sound.createAsync({ uri: audioUrl });
+    const created = await withAudioUrl(audioPath, (uri) =>
+      Audio.Sound.createAsync({ uri })
+    );
+
+    if (!created) {
+      setPlayingId(null);
+      playingIdRef.current = null;
+      return;
+    }
+
+    const { sound, status: initialStatus } = created;
 
     soundRef.current = sound;
     durationMillisRef.current =
@@ -1011,7 +1026,11 @@ export default function WhisperThreadScreen() {
     });
   }
 
-  async function toggleAudio(playbackId: string, audioUrl: string, voiceNoteId?: string) {
+  async function toggleAudio(
+    playbackId: string,
+    audioPath: string | null | undefined,
+    voiceNoteId?: string
+  ) {
     if (playingIdRef.current === playbackId && soundRef.current) {
       const status = await soundRef.current.getStatusAsync();
       if (status.isLoaded) {
@@ -1026,26 +1045,26 @@ export default function WhisperThreadScreen() {
       }
     }
 
-    await playAudio(playbackId, audioUrl, voiceNoteId);
+    await playAudio(playbackId, audioPath, voiceNoteId);
   }
 
   async function seekAudio(
     playbackId: string,
-    audioUrl: string,
+    audioPath: string | null | undefined,
     voiceNoteId: string | undefined,
     fraction: number
   ) {
     const clamped = Math.max(0, Math.min(1, fraction));
 
     if (playingIdRef.current !== playbackId || !soundRef.current) {
-      await playAudio(playbackId, audioUrl, voiceNoteId, clamped);
+      await playAudio(playbackId, audioPath, voiceNoteId, clamped);
       return;
     }
 
     setPlaybackProgress(clamped);
 
     if (seekingRef.current) {
-      pendingSeekRef.current = { playbackId, audioUrl, voiceNoteId, fraction: clamped };
+      pendingSeekRef.current = { playbackId, audioPath, voiceNoteId, fraction: clamped };
       return;
     }
 
@@ -1061,7 +1080,7 @@ export default function WhisperThreadScreen() {
       const pending = pendingSeekRef.current;
       pendingSeekRef.current = null;
       if (pending) {
-        void seekAudio(pending.playbackId, pending.audioUrl, pending.voiceNoteId, pending.fraction);
+        void seekAudio(pending.playbackId, pending.audioPath, pending.voiceNoteId, pending.fraction);
       }
     }
   }
@@ -1069,7 +1088,7 @@ export default function WhisperThreadScreen() {
   async function playMessage(message: WhisperMessage) {
     if (!message.audio_url) return;
 
-    await toggleAudio(message.id, message.audio_url);
+    await toggleAudio(message.id, message.audio_path);
   }
 
   async function requestTuneInForEcho(echo: SharedEcho) {
@@ -1321,6 +1340,7 @@ export default function WhisperThreadScreen() {
           sender_id: currentUserId,
           receiver_id: otherUserId,
           audio_url: publicUrlData.publicUrl,
+          audio_path: fileName,
           duration: Math.max(1, seconds),
           caption: cleanCaption || null,
           waveform,
@@ -1491,7 +1511,7 @@ export default function WhisperThreadScreen() {
                           <PressScale
                             containerStyle={styles.sharedEchoPlayWrap}
                             style={styles.sharedEchoPlay}
-                            onPress={() => toggleAudio(item.id, sharedEcho.audioUrl, sharedEcho.id)}
+                            onPress={() => toggleAudio(item.id, sharedEcho.audioPath, sharedEcho.id)}
                             onLongPress={revealSentAt}
                           >
                             <View style={styles.sharedEchoPlayButton}>
@@ -1506,7 +1526,7 @@ export default function WhisperThreadScreen() {
                               active={isLoadedMessage}
                               progress={isLoadedMessage ? playbackProgress : 0}
                               onSeek={(fraction) => {
-                                void seekAudio(item.id, sharedEcho.audioUrl, sharedEcho.id, fraction);
+                                void seekAudio(item.id, sharedEcho.audioPath, sharedEcho.id, fraction);
                               }}
                               onLongPress={revealSentAt}
                             />
@@ -1592,7 +1612,7 @@ export default function WhisperThreadScreen() {
                     onSeek={
                       item.audio_url
                         ? (fraction) => {
-                            void seekAudio(item.id, item.audio_url as string, undefined, fraction);
+                            void seekAudio(item.id, item.audio_path as string, undefined, fraction);
                           }
                         : undefined
                     }

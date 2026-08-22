@@ -628,7 +628,10 @@ export default function RecordScreen() {
         .insert({
           user_id: user.id,
           username,
+          // audio_url stays written for rollback safety; playback reads
+          // audio_path and signs it, since the bucket is private.
           audio_url: publicUrlData.publicUrl,
+          audio_path: fileName,
           caption: title.trim(),
           waveform,
           duration: recordedDurationSeconds(),

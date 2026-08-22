@@ -50,6 +50,7 @@ import {
 } from '@/lib/groupWhispers';
 import { error as hapticError, light, medium, success } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
+import { prefetchAudioUrls, withAudioUrl } from '@/lib/audioUrls';
 import { downsampleWaveform, getFallbackWaveform, meteringToAmplitude } from '@/lib/waveform';
 import { useMessageTimeReveal } from '@/hooks/useMessageTimeReveal';
 import { useWaveformScrub } from '@/hooks/useWaveformScrub';
@@ -585,6 +586,7 @@ export default function GroupWhisperThreadScreen() {
       setCurrentUserId(me);
       setThread(nextThread);
       setMembers(nextMembers);
+      void prefetchAudioUrls(nextMessages.map((message) => message.audio_path));
       setMessages(nextMessages);
       setListenedIds(nextListenedIds);
 
@@ -682,9 +684,17 @@ export default function GroupWhisperThreadScreen() {
       playsInSilentModeIOS: true,
     });
 
-    const { sound, status: initialStatus } = await Audio.Sound.createAsync({
-      uri: message.audio_url,
-    });
+    const created = await withAudioUrl(message.audio_path, (uri) =>
+      Audio.Sound.createAsync({ uri })
+    );
+
+    if (!created) {
+      setPlayingId(null);
+      playingIdRef.current = null;
+      return;
+    }
+
+    const { sound, status: initialStatus } = created;
 
     soundRef.current = sound;
     durationMillisRef.current =
@@ -993,6 +1003,7 @@ export default function GroupWhisperThreadScreen() {
         threadId,
         senderId: currentUserId,
         audioUrl: publicUrlData.publicUrl,
+        audioPath: fileName,
         duration: Math.max(1, seconds),
         caption: cleanCaption || null,
         waveform,

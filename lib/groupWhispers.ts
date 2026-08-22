@@ -243,6 +243,7 @@ export type GroupThreadMessage = {
   group_thread_id: string;
   sender_id: string;
   audio_url: string;
+  audio_path?: string | null;
   duration: number;
   caption: string | null;
   waveform: number[] | null;
@@ -274,6 +275,7 @@ export async function sendGroupWhisperMessage(params: {
   threadId: string;
   senderId: string;
   audioUrl: string;
+  audioPath: string;
   duration: number;
   caption: string | null;
   waveform: number[] | null;
@@ -285,6 +287,7 @@ export async function sendGroupWhisperMessage(params: {
       group_thread_id: params.threadId,
       sender_id: params.senderId,
       audio_url: params.audioUrl,
+      audio_path: params.audioPath,
       duration: params.duration,
       caption: params.caption,
       waveform: params.waveform,

@@ -29,6 +29,7 @@ import {
 } from '../../constants/frequencyTheme';
 import { uploadProfileAvatar } from '../../lib/avatars';
 import { supabase } from '../../lib/supabase';
+import { prefetchAudioUrls, withAudioUrl } from '@/lib/audioUrls';
 import { useTuneIn } from '../../hooks/useTuneIn';
 import { useWaveformScrub } from '../../hooks/useWaveformScrub';
 import { resolveDisplayUsername } from '@/lib/profiles';
@@ -69,6 +70,7 @@ type ProfileEcho = {
   id: string;
   user_id?: string;
   audio_url?: string;
+  audio_path?: string | null;
   caption: string | null;
   created_at: string;
   duration?: number | null;
@@ -231,6 +233,7 @@ export default function FrequencyScreen() {
       isEchoLive(echo.created_at)
     );
 
+    void prefetchAudioUrls(liveEchoes.map((echo) => echo.audio_path));
     setEchoes(liveEchoes);
     const metricEntries = await Promise.all(
       liveEchoes.map(async (echo) => [echo.id, await loadLiveEchoMetrics(echo)] as const)
@@ -424,9 +427,15 @@ export default function FrequencyScreen() {
         playsInSilentModeIOS: true,
       });
 
-      const { sound, status: initialStatus } = await Audio.Sound.createAsync({
-        uri: echo.audio_url,
-      });
+      const created = await withAudioUrl(echo.audio_path, (uri) =>
+        Audio.Sound.createAsync({ uri })
+      );
+      if (!created) {
+        setPlayingEchoId(null);
+        playingEchoIdRef.current = null;
+        return;
+      }
+      const { sound, status: initialStatus } = created;
       soundRef.current = sound;
       durationMillisRef.current =
         initialStatus.isLoaded && initialStatus.durationMillis
